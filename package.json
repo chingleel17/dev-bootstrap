@@ -1,0 +1,16 @@
+{
+  "name": "dev-bootstrap",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "menu": "bun run src/index.ts menu",
+    "list": "bun run src/index.ts list",
+    "doctor": "bun run src/index.ts doctor",
+    "install-tools": "bun run src/index.ts install"
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  }
+}

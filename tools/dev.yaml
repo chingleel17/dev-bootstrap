@@ -1,0 +1,55 @@
+- id: git
+  name: Git
+  category: Git
+  description: Source control
+  install:
+    winget: "Git.Git"
+    brew: "git"
+    apt: "git"
+  verify:
+    - command: "git --version"
+      regex: "git version ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: git-lfs
+  name: Git LFS
+  category: Git
+  description: Large file support for Git
+  install:
+    winget: "GitHub.GitLFS"
+    brew: "git-lfs"
+    apt: "git-lfs"
+  verify:
+    - command: "git lfs version"
+      regex: "git-lfs/([0-9]+(?:\\.[0-9]+)+)"
+
+- id: gh
+  name: GitHub CLI
+  category: Git
+  description: GitHub command line tool
+  install:
+    winget: "GitHub.cli"
+    brew: "gh"
+    apt: "gh"
+  verify:
+    - command: "gh --version"
+      regex: "gh version ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: copilot
+  name: GitHub Copilot CLI
+  category: AI
+  description: GitHub Copilot extension for gh
+  install:
+    script: "gh extension install github/gh-copilot || gh extension upgrade gh-copilot"
+  verify:
+    - command: "gh copilot --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: tauri
+  name: Tauri CLI
+  category: Frontend
+  description: Desktop app CLI
+  install:
+    bun: "@tauri-apps/cli"
+  verify:
+    - command: "tauri --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"

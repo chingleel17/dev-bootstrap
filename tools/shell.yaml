@@ -1,0 +1,84 @@
+- id: ohmyposh
+  name: Oh My Posh
+  category: Shell
+  description: Cross-platform prompt theme engine
+  homepage: https://ohmyposh.dev
+  install:
+    winget: "JanDeDobbeleer.OhMyPosh"
+    brew: "jandedobbeleer/oh-my-posh/oh-my-posh"
+    script: "curl -s https://ohmyposh.dev/install.sh | bash -s"
+  verify:
+    - command: "oh-my-posh --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: zoxide
+  name: zoxide
+  category: Shell
+  description: Smarter cd command
+  install:
+    winget: "ajeetdsouza.zoxide"
+    brew: "zoxide"
+    apt: "zoxide"
+  verify:
+    - command: "zoxide --version"
+      regex: "zoxide ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: fzf
+  name: fzf
+  category: Shell
+  description: Fuzzy finder
+  install:
+    winget: "junegunn.fzf"
+    brew: "fzf"
+    apt: "fzf"
+  verify:
+    - command: "fzf --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: ripgrep
+  name: ripgrep
+  category: Shell
+  description: Fast text search
+  install:
+    winget: "BurntSushi.ripgrep.MSVC"
+    brew: "ripgrep"
+    apt: "ripgrep"
+  verify:
+    - command: "rg --version"
+      regex: "ripgrep ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: fd
+  name: fd
+  category: Shell
+  description: Fast file finder
+  install:
+    winget: "sharkdp.fd"
+    brew: "fd"
+    apt: "fd-find"
+  verify:
+    - command: "fd --version"
+      regex: "fd ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: bat
+  name: bat
+  category: Shell
+  description: Better cat with syntax highlighting
+  install:
+    winget: "sharkdp.bat"
+    brew: "bat"
+    apt: "bat"
+  verify:
+    - command: "bat --version"
+      regex: "bat ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: eza
+  name: eza
+  category: Shell
+  description: Better ls
+  install:
+    winget: "eza-community.eza"
+    brew: "eza"
+    apt: "eza"
+  verify:
+    - command: "eza --version"
+      regex: "v([0-9]+(?:\\.[0-9]+)+)"

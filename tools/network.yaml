@@ -1,0 +1,47 @@
+- id: ngrok
+  name: ngrok
+  category: Network
+  description: Secure tunnels to localhost
+  homepage: https://ngrok.com/download
+  install:
+    winget: "Ngrok.Ngrok"
+    brew: "ngrok/ngrok/ngrok"
+  verify:
+    - command: "ngrok version"
+      regex: "ngrok version ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: cloudflared
+  name: cloudflared
+  category: Network
+  description: Cloudflare Tunnel CLI
+  install:
+    winget: "Cloudflare.cloudflared"
+    brew: "cloudflared"
+    apt: "cloudflared"
+  verify:
+    - command: "cloudflared --version"
+      regex: "cloudflared version ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: openssh
+  name: OpenSSH Client
+  category: Network
+  description: SSH client tools
+  install:
+    winget: "Microsoft.OpenSSH.Beta"
+    brew: "openssh"
+    apt: "openssh-client"
+  verify:
+    - command: "ssh -V"
+      regex: "OpenSSH_([0-9]+(?:\\.[0-9]+)*)"
+
+- id: openssl
+  name: OpenSSL
+  category: Network
+  description: SSL/TLS toolkit
+  install:
+    winget: "ShiningLight.OpenSSL"
+    brew: "openssl"
+    apt: "openssl"
+  verify:
+    - command: "openssl version"
+      regex: "OpenSSL ([0-9]+(?:\\.[0-9]+)+)"

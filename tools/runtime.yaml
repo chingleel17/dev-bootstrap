@@ -1,0 +1,115 @@
+- id: bun
+  name: Bun
+  category: Runtime
+  description: JavaScript runtime and package manager
+  homepage: https://bun.sh
+  install:
+    winget: "Oven-sh.Bun"
+    brew: "oven-sh/bun/bun"
+    script: "curl -fsSL https://bun.sh/install | bash"
+  verify:
+    - command: "bun --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: node
+  name: Node.js LTS
+  category: Runtime
+  description: JavaScript runtime
+  homepage: https://nodejs.org
+  install:
+    winget: "OpenJS.NodeJS.LTS"
+    brew: "node"
+    apt: "nodejs npm"
+  verify:
+    - command: "node --version"
+      regex: "v?([0-9]+(?:\\.[0-9]+)+)"
+
+- id: pnpm
+  name: pnpm
+  category: Runtime
+  description: Fast Node package manager
+  install:
+    bun: "pnpm"
+  verify:
+    - command: "pnpm --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: yarn
+  name: Yarn
+  category: Runtime
+  description: Node package manager
+  install:
+    bun: "yarn"
+  verify:
+    - command: "yarn --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: typescript
+  name: TypeScript
+  category: Runtime
+  description: TypeScript compiler
+  install:
+    bun: "typescript"
+  verify:
+    - command: "tsc --version"
+      regex: "Version ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: tsx
+  name: tsx
+  category: Runtime
+  description: TypeScript execution tool
+  install:
+    bun: "tsx"
+  verify:
+    - command: "tsx --version"
+      regex: "tsx v?([0-9]+(?:\\.[0-9]+)+)"
+
+- id: uv
+  name: uv
+  category: Runtime
+  description: Python package and project manager
+  homepage: https://docs.astral.sh/uv/
+  install:
+    winget: "astral-sh.uv"
+    brew: "uv"
+    script: "curl -LsSf https://astral.sh/uv/install.sh | sh"
+  verify:
+    - command: "uv --version"
+      regex: "uv ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: rust
+  name: Rust
+  category: Runtime
+  description: Rust toolchain
+  homepage: https://rustup.rs
+  install:
+    winget: "Rustlang.Rustup"
+    brew: "rustup"
+    script: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+  verify:
+    - command: "rustc --version"
+      regex: "rustc ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: go
+  name: Go
+  category: Runtime
+  description: Go language toolchain
+  install:
+    winget: "GoLang.Go"
+    brew: "go"
+    apt: "golang-go"
+  verify:
+    - command: "go version"
+      regex: "go([0-9]+(?:\\.[0-9]+)+)"
+
+- id: java
+  name: Java Temurin 21
+  category: Runtime
+  description: Java JDK 21
+  install:
+    winget: "EclipseAdoptium.Temurin.21.JDK"
+    brew: "openjdk@21"
+    apt: "openjdk-21-jdk"
+  verify:
+    - command: "java -version"
+      regex: "version \\\"([0-9]+(?:\\.[0-9]+)*)"

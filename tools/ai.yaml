@@ -1,0 +1,54 @@
+- id: codex
+  name: OpenAI Codex CLI
+  category: AI
+  description: OpenAI coding agent CLI
+  homepage: https://developers.openai.com/codex
+  install:
+    bun: "@openai/codex"
+  verify:
+    - command: "codex --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: claude
+  name: Claude Code
+  category: AI
+  description: Anthropic coding agent CLI
+  homepage: https://docs.anthropic.com/en/docs/claude-code
+  install:
+    bun: "@anthropic-ai/claude-code"
+  verify:
+    - command: "claude --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: opencode
+  name: OpenCode CLI
+  category: AI
+  description: AI coding agent CLI
+  homepage: https://opencode.ai
+  install:
+    bun: "opencode-ai"
+  verify:
+    - command: "opencode --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: gemini
+  name: Gemini CLI
+  category: AI
+  description: Google Gemini CLI
+  homepage: https://github.com/google-gemini/gemini-cli
+  install:
+    bun: "@google/gemini-cli"
+  verify:
+    - command: "gemini --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: openspec
+  name: OpenSpec
+  category: AI
+  description: Spec workflow CLI
+  homepage: https://github.com
+  install:
+    bun: "openspec"
+  verify:
+    - command: "openspec --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"

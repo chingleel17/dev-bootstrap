@@ -1,0 +1,81 @@
+- id: jq
+  name: jq
+  category: Utilities
+  description: JSON processor
+  install:
+    winget: "jqlang.jq"
+    brew: "jq"
+    apt: "jq"
+  verify:
+    - command: "jq --version"
+      regex: "jq-([0-9]+(?:\\.[0-9]+)+)"
+
+- id: yq
+  name: yq
+  category: Utilities
+  description: YAML processor
+  install:
+    winget: "MikeFarah.yq"
+    brew: "yq"
+    apt: "yq"
+  verify:
+    - command: "yq --version"
+      regex: "version v?([0-9]+(?:\\.[0-9]+)+)"
+
+- id: delta
+  name: delta
+  category: Utilities
+  description: Better git diff viewer
+  install:
+    winget: "dandavison.delta"
+    brew: "git-delta"
+    apt: "git-delta"
+  verify:
+    - command: "delta --version"
+      regex: "delta ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: wget
+  name: wget
+  category: Utilities
+  description: File downloader
+  install:
+    winget: "GNU.Wget2"
+    brew: "wget"
+    apt: "wget"
+  verify:
+    - command: "wget --version"
+      regex: "GNU Wget2? ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: curl
+  name: curl
+  category: Utilities
+  description: HTTP client
+  install:
+    winget: "curl.curl"
+    brew: "curl"
+    apt: "curl"
+  verify:
+    - command: "curl --version"
+      regex: "curl ([0-9]+(?:\\.[0-9]+)+)"
+
+- id: unzip
+  name: unzip
+  category: Utilities
+  description: Extract zip files
+  install:
+    brew: "unzip"
+    apt: "unzip"
+  verify:
+    - command: "unzip -v"
+      regex: "UnZip ([0-9]+(?:\\.[0-9]+)*)"
+
+- id: zip
+  name: zip
+  category: Utilities
+  description: Create zip files
+  install:
+    brew: "zip"
+    apt: "zip"
+  verify:
+    - command: "zip -v"
+      regex: "Zip ([0-9]+(?:\\.[0-9]+)*)"
