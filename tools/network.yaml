@@ -30,6 +30,9 @@
     winget: "Microsoft.OpenSSH.Beta"
     brew: "openssh"
     apt: "openssh-client"
+  update:
+    disabled: true
+    note: "Windows built-in OpenSSH is usually updated by Windows Update or optional features, not by winget upgrade."
   verify:
     - command: "ssh -V"
       regex: "OpenSSH_([0-9]+(?:\\.[0-9]+)*)"

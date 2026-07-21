@@ -4,7 +4,7 @@
   description: OpenAI coding agent CLI
   homepage: https://developers.openai.com/codex
   install:
-    bun: "@openai/codex"
+    npm: "@openai/codex"
   verify:
     - command: "codex --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
@@ -15,7 +15,11 @@
   description: Anthropic coding agent CLI
   homepage: https://docs.anthropic.com/en/docs/claude-code
   install:
-    bun: "@anthropic-ai/claude-code"
+    powershell: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://claude.ai/install.ps1 | iex\""
+    script: "curl -fsSL https://claude.ai/install.sh | bash"
+  update:
+    command: "claude update"
+    note: "原生安裝版會在背景自動更新，claude update 可立即手動更新。"
   verify:
     - command: "claude --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
@@ -26,7 +30,9 @@
   description: AI coding agent CLI
   homepage: https://opencode.ai
   install:
-    bun: "opencode-ai"
+    npm: "opencode-ai"
+  update:
+    command: "opencode upgrade"
   verify:
     - command: "opencode --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
@@ -37,7 +43,7 @@
   description: Google Gemini CLI
   homepage: https://github.com/google-gemini/gemini-cli
   install:
-    bun: "@google/gemini-cli"
+    npm: "@google/gemini-cli"
   verify:
     - command: "gemini --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
@@ -46,9 +52,9 @@
   name: OpenSpec
   category: AI
   description: Spec workflow CLI
-  homepage: https://github.com
+  homepage: https://github.com/Fission-AI/OpenSpec
   install:
-    bun: "openspec"
+    npm: "@fission-ai/openspec"
   verify:
     - command: "openspec --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"

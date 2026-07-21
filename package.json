@@ -8,7 +8,8 @@
     "menu": "bun run src/index.ts menu",
     "list": "bun run src/index.ts list",
     "doctor": "bun run src/index.ts doctor",
-    "install-tools": "bun run src/index.ts install"
+    "install-tools": "bun run src/index.ts install",
+    "update": "bun run src/index.ts update"
   },
   "dependencies": {
     "yaml": "^2.6.1"

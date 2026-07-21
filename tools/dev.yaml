@@ -37,11 +37,14 @@
 - id: copilot
   name: GitHub Copilot CLI
   category: AI
-  description: GitHub Copilot extension for gh
+  description: GitHub Copilot coding agent CLI
+  homepage: https://docs.github.com/en/copilot/how-tos/copilot-cli
   install:
-    script: "gh extension install github/gh-copilot || gh extension upgrade gh-copilot"
+    npm: "@github/copilot"
+  update:
+    command: "copilot update"
   verify:
-    - command: "gh copilot --version"
+    - command: "copilot --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
 
 - id: tauri

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,15 +7,24 @@ import YAML from "yaml";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const toolsDir = join(rootDir, "tools");
-const VERIFY_TIMEOUT_MS = 2500;
+const configDir = join(rootDir, ".dev-bootstrap");
+const updateProfilePath = join(configDir, "update-profile.json");
+const VERIFY_TIMEOUT_MS = 10000;
 
 type Platform = "windows" | "mac" | "linux";
 type InstallSpec = {
+  npm?: string;
   bun?: string;
   winget?: string;
   brew?: string;
   apt?: string;
   script?: string;
+  powershell?: string;
+};
+type UpdateSpec = {
+  disabled?: boolean;
+  note?: string;
+  command?: string;
 };
 type VerifySpec = { command: string; regex?: string };
 type Tool = {
@@ -25,6 +34,7 @@ type Tool = {
   description?: string;
   homepage?: string;
   install?: InstallSpec;
+  update?: UpdateSpec;
   verify?: VerifySpec[];
 };
 type ToolStatusKind = "unchecked" | "installed" | "missing" | "timeout";
@@ -37,10 +47,17 @@ type ToolStatus = {
 
 type MenuState = {
   cursor: number;
+  scrollOffset: number;
   selected: Set<string>;
   filter: string;
   category: string;
   force: boolean;
+};
+
+type UpdateProfile = {
+  version: 1;
+  toolIds: string[];
+  updatedAt: string;
 };
 
 const ansi = {
@@ -53,9 +70,27 @@ const ansi = {
   red: "\x1b[31m",
   magenta: "\x1b[35m",
   clear: "\x1b[2J\x1b[H",
+  home: "\x1b[H",
+  clearBelow: "\x1b[J",
   hideCursor: "\x1b[?25l",
   showCursor: "\x1b[?25h",
 };
+
+function enableRawInput() {
+  process.stdin.setRawMode?.(true);
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
+}
+
+function disableRawInput() {
+  process.stdin.setRawMode?.(false);
+  process.stdin.pause();
+}
+
+function restoreTerminal(newline = false) {
+  disableRawInput();
+  process.stdout.write(`${ansi.showCursor}${newline ? "\n" : ""}`);
+}
 
 function platform(): Platform {
   if (process.platform === "win32") return "windows";
@@ -88,7 +123,7 @@ function runCapture(
       stdout: (proc.stdout ?? "").trim(),
       stderr: (proc.stderr ?? "").trim(),
       code: proc.status,
-      timedOut: proc.error?.name === "Error" && String(proc.error.message).toLowerCase().includes("timed out"),
+      timedOut: (proc.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT",
     };
   } catch (err: any) {
     return { ok: false, stdout: "", stderr: String(err?.message ?? err), code: null, timedOut: false };
@@ -122,19 +157,24 @@ function chooseInstallCommand(tool: Tool): string | null {
 
   if (p === "windows") {
     if (install.winget) return `winget install --id ${install.winget} -e --accept-package-agreements --accept-source-agreements`;
+    if (install.powershell) return install.powershell;
+    if (install.npm) return `npm install -g ${install.npm}`;
     if (install.bun) return `bun add -g ${install.bun}`;
     if (install.script) return install.script;
   }
   if (p === "mac") {
     if (install.brew) return `brew install ${install.brew}`;
+    if (install.npm) return `npm install -g ${install.npm}`;
     if (install.bun) return `bun add -g ${install.bun}`;
     if (install.script) return install.script;
   }
   if (p === "linux") {
     if (install.apt) return `sudo apt-get update && sudo apt-get install -y ${install.apt}`;
+    if (install.npm) return `npm install -g ${install.npm}`;
     if (install.bun) return `bun add -g ${install.bun}`;
     if (install.script) return install.script;
   }
+  if (install.npm) return `npm install -g ${install.npm}`;
   if (install.bun) return `bun add -g ${install.bun}`;
   return null;
 }
@@ -150,6 +190,33 @@ function versionFromOutput(output: string, regex?: string): string {
   }
   const m = text.match(/v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?/);
   return m?.[0] ?? text.slice(0, 80);
+}
+
+function hasVersionInOutput(output: string, regex?: string): boolean {
+  const text = output.trim();
+  if (!text) return false;
+  if (regex) {
+    try {
+      if (new RegExp(regex).test(text)) return true;
+    } catch {}
+  }
+  return /v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?/.test(text);
+}
+
+function commandNameFromVerify(command: string): string | null {
+  const trimmed = command.trim();
+  if (!trimmed) return null;
+  const quoted = trimmed.match(/^"([^"]+)"/);
+  if (quoted?.[1]) return quoted[1];
+  return trimmed.split(/\s+/)[0] ?? null;
+}
+
+function commandExists(command: string): boolean {
+  const name = commandNameFromVerify(command);
+  if (!name) return false;
+  const probe = isWindows() ? `where.exe ${name}` : `command -v ${name}`;
+  const result = runCapture(probe, 3000);
+  return result.ok && !!result.stdout.trim();
 }
 
 function detectStatus(tool: Tool): ToolStatus {
@@ -168,8 +235,24 @@ function detectStatus(tool: Tool): ToolStatus {
         raw: output,
       };
     }
+    if (result.timedOut && output.trim()) {
+      return {
+        kind: "installed",
+        installed: true,
+        version: versionFromOutput(output, v.regex),
+        raw: output,
+      };
+    }
     if (result.ok) {
       return { kind: "installed", installed: true, version: "installed" };
+    }
+    if (commandExists(v.command)) {
+      return {
+        kind: "installed",
+        installed: true,
+        version: hasVersionInOutput(output, v.regex) ? versionFromOutput(output, v.regex) : "installed",
+        raw: output || undefined,
+      };
     }
     if (result.timedOut) {
       return { kind: "timeout", installed: false, version: "timeout" };
@@ -186,25 +269,71 @@ function uncheckedStatus(): ToolStatus {
 function detectAllWithProgress(tools: Tool[], label = "Checking installed versions"): Map<string, ToolStatus> {
   const status = new Map<string, ToolStatus>();
   const frames = ["-", "\\", "|", "/"];
-  process.stdout.write(ansi.hideCursor);
+  const interactive = !!process.stdout.isTTY;
+  if (interactive) process.stdout.write(ansi.hideCursor);
   try {
     for (let i = 0; i < tools.length; i++) {
       const tool = tools[i];
-      process.stdout.write(ansi.clear);
-      console.log(`${ansi.bold}dev-bootstrap${ansi.reset}`);
-      console.log(`${ansi.cyan}${frames[i % frames.length]}${ansi.reset} ${label}`);
-      console.log(`${ansi.dim}${i + 1}/${tools.length}${ansi.reset} ${tool.name}`);
-      if (tool.verify?.[0]?.command) {
-        console.log(`${ansi.dim}${tool.verify[0].command}${ansi.reset}`);
+      if (interactive) {
+        const pct = Math.round(((i + 1) / tools.length) * 24);
+        const lines = [
+          `${ansi.bold}dev-bootstrap${ansi.reset}`,
+          `${ansi.cyan}${frames[i % frames.length]}${ansi.reset} ${label}`,
+          `${ansi.dim}${i + 1}/${tools.length}${ansi.reset} ${tool.name}`,
+          tool.verify?.[0]?.command ? `${ansi.dim}${tool.verify[0].command}${ansi.reset}` : "",
+          "",
+          `[${"#".repeat(pct)}${"-".repeat(24 - pct)}] ${i + 1}/${tools.length}`,
+        ];
+        process.stdout.write(`${i === 0 ? ansi.clear : ansi.home}${lines.join("\n")}${ansi.clearBelow}`);
       }
-      const pct = Math.round(((i + 1) / tools.length) * 24);
-      console.log(`\n[${"#".repeat(pct)}${"-".repeat(24 - pct)}] ${i + 1}/${tools.length}`);
       status.set(tool.id, detectStatus(tool));
     }
   } finally {
-    process.stdout.write(ansi.showCursor);
+    if (interactive) process.stdout.write(ansi.showCursor);
   }
   return status;
+}
+
+function loadUpdateProfile(): UpdateProfile {
+  try {
+    const parsed = JSON.parse(readFileSync(updateProfilePath, "utf8")) as Partial<UpdateProfile>;
+    const toolIds = Array.isArray(parsed.toolIds) ? parsed.toolIds.filter((id): id is string => typeof id === "string") : [];
+    return { version: 1, toolIds, updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "" };
+  } catch {
+    return { version: 1, toolIds: [], updatedAt: "" };
+  }
+}
+
+function saveUpdateProfile(toolIds: string[]) {
+  mkdirSync(configDir, { recursive: true });
+  const profile: UpdateProfile = { version: 1, toolIds: [...new Set(toolIds)].sort(), updatedAt: new Date().toISOString() };
+  writeFileSync(updateProfilePath, `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+}
+
+function updateCommand(tool: Tool): string | null {
+  if (tool.update?.disabled) return null;
+  if (tool.update?.command) return tool.update.command;
+
+  const p = platform();
+  const install = tool.install ?? {};
+
+  if (p === "windows" && install.winget) {
+    return `winget upgrade --id ${install.winget} -e --accept-package-agreements --accept-source-agreements`;
+  }
+  if (p === "mac" && install.brew) return `brew upgrade ${install.brew}`;
+  // npm 與 bun 各自只更新自己安裝的那份；yaml 應標註官方推薦的那個管理器。
+  if (install.npm) return `npm install -g ${install.npm}@latest`;
+  if (install.bun) return `bun add -g ${install.bun}@latest`;
+  // Script-based installers do not expose a portable update command. Re-run only when explicitly selected.
+  return install.script ?? chooseInstallCommand(tool);
+}
+
+function canUseWingetForUpdate(packageId: string): boolean {
+  const result = runCapture(
+    `winget list --id ${packageId} -e --accept-source-agreements --disable-interactivity`,
+    5000,
+  );
+  return result.ok;
 }
 
 function statusText(status?: ToolStatus): string {
@@ -251,57 +380,122 @@ function currentTool(visible: Tool[], state: MenuState): Tool | undefined {
   return visible[state.cursor];
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function pageSize(): number {
+  const rows = process.stdout.rows ?? 30;
+  return clamp(rows - 23, 6, 12);
+}
+
+function screenWidth(): number {
+  const columns = process.stdout.columns ?? 100;
+  return clamp(columns - 1, 72, 120);
+}
+
+function truncate(value: string, width: number): string {
+  if (value.length <= width) return value;
+  if (width <= 1) return value.slice(0, width);
+  return `${value.slice(0, width - 3)}...`;
+}
+
+function ensureCursorVisible(visibleCount: number, state: MenuState) {
+  const size = pageSize();
+  state.cursor = clamp(state.cursor, 0, Math.max(0, visibleCount - 1));
+  state.scrollOffset = clamp(state.scrollOffset, 0, Math.max(0, visibleCount - size));
+
+  if (state.cursor < state.scrollOffset) {
+    state.scrollOffset = state.cursor;
+  }
+  if (state.cursor >= state.scrollOffset + size) {
+    state.scrollOffset = state.cursor - size + 1;
+  }
+}
+
 function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state: MenuState) {
   const visible = filteredTools(tools, state);
+  ensureCursorVisible(visible.length, state);
   const selectedTool = currentTool(visible, state);
-  process.stdout.write(ansi.clear);
+  const size = pageSize();
+  const windowed = visible.slice(state.scrollOffset, state.scrollOffset + size);
+  const width = screenWidth();
+  const lines: string[] = [];
+
+  const categoryActionLabel =
+    state.category === "All" ? "all category items" : `${state.category} category`;
 
   const categories = groupedCategories(tools)
-    .map((category) => (category === state.category ? `${ansi.cyan}[${category}]${ansi.reset}` : category))
-    .join(` ${ansi.dim}|${ansi.reset} `);
+    .map((category) => (category === state.category ? `[${category}]` : category))
+    .join(" | ");
 
-  console.log(`${ansi.bold}dev-bootstrap${ansi.reset} ${ansi.dim}v0.2${ansi.reset}`);
-  console.log(`${ansi.dim}Space toggle | A/Ctrl+A visible all | C category all | Tab category | / search | V refresh versions | F force ${state.force ? "on" : "off"} | Enter install | Backspace back | Q quit${ansi.reset}`);
-  console.log("");
-  console.log(`Categories: ${categories}`);
-  console.log(
-    `Filter: ${state.filter ? ansi.yellow + state.filter + ansi.reset : ansi.dim + "none" + ansi.reset}  ` +
-      `Selected: ${state.selected.size}  ` +
-      `Visible: ${visible.length}/${tools.length}`,
+  lines.push(`${ansi.bold}dev-bootstrap${ansi.reset} ${ansi.dim}v0.2${ansi.reset}`);
+  lines.push(
+    `${ansi.dim}${truncate(
+      `Space toggle | A/Ctrl+A visible items | C ${categoryActionLabel} | Tab category | / search | V refresh versions | F force ${state.force ? "on" : "off"} | Enter install | Backspace back | Q quit`,
+      width,
+    )}${ansi.reset}`,
   );
-  console.log("=".repeat(104));
+  lines.push("");
+  lines.push(`Categories: ${truncate(categories, width - 12)}`);
+  lines.push(
+    truncate(
+      `Filter: ${state.filter ? state.filter : "none"}  ` +
+        `Selected: ${state.selected.size}  ` +
+        `Visible: ${visible.length}/${tools.length}  ` +
+        `Showing: ${visible.length === 0 ? 0 : state.scrollOffset + 1}-${Math.min(visible.length, state.scrollOffset + size)}`,
+      width,
+    ),
+  );
+  lines.push("=".repeat(width));
 
   if (visible.length === 0) {
-    console.log(`${ansi.yellow}No tools matched the current filter.${ansi.reset}`);
+    lines.push(`${ansi.yellow}No tools matched the current filter.${ansi.reset}`);
   } else {
+    if (state.scrollOffset > 0) {
+      lines.push(`${ansi.dim}... ${state.scrollOffset} tools above${ansi.reset}`);
+    }
+
     let lastCategory = "";
-    for (let i = 0; i < visible.length; i++) {
-      const tool = visible[i];
+    for (let i = 0; i < windowed.length; i++) {
+      const absoluteIndex = state.scrollOffset + i;
+      const tool = windowed[i];
       if (tool.category !== lastCategory) {
         lastCategory = tool.category;
-        console.log(`\n${ansi.bold}${tool.category}${ansi.reset}`);
+        lines.push("");
+        lines.push(`${ansi.bold}${tool.category}${ansi.reset}`);
       }
 
-      const pointer = i === state.cursor ? `${ansi.cyan}>${ansi.reset}` : " ";
+      const pointer = absoluteIndex === state.cursor ? `${ansi.cyan}>${ansi.reset}` : " ";
       const checked = state.selected.has(tool.id) ? `${ansi.green}[x]${ansi.reset}` : "[ ]";
-      const label = pad(`${checked} ${tool.name}`, 36);
-      const desc = pad((tool.description ?? "").slice(0, 38), 40);
-      console.log(`${pointer} ${label} ${desc} ${colorStatus(status.get(tool.id))}`);
+      const labelWidth = Math.min(32, Math.max(22, Math.floor(width * 0.34)));
+      const descWidth = Math.min(36, Math.max(18, width - labelWidth - 24));
+      const label = pad(`${checked} ${truncate(tool.name, labelWidth - 5)}`, labelWidth);
+      const desc = pad(truncate(tool.description ?? "", descWidth), descWidth);
+      lines.push(`${pointer} ${label} ${desc} ${colorStatus(status.get(tool.id))}`);
+    }
+
+    const hiddenBelow = visible.length - state.scrollOffset - windowed.length;
+    if (hiddenBelow > 0) {
+      lines.push(`${ansi.dim}... ${hiddenBelow} tools below${ansi.reset}`);
     }
   }
 
-  console.log("\n" + "-".repeat(104));
+  lines.push("");
+  lines.push("-".repeat(width));
   if (selectedTool) {
     const st = status.get(selectedTool.id) ?? uncheckedStatus();
-    console.log(`${ansi.bold}${selectedTool.name}${ansi.reset} ${ansi.dim}(${selectedTool.id})${ansi.reset}`);
-    console.log(`${selectedTool.description ?? "No description"}`);
-    console.log(`Status: ${colorStatus(st)}  Category: ${selectedTool.category}`);
-    if (selectedTool.homepage) console.log(`Homepage: ${selectedTool.homepage}`);
+    lines.push(`${ansi.bold}${truncate(selectedTool.name, Math.max(20, width - selectedTool.id.length - 4))}${ansi.reset} ${ansi.dim}(${selectedTool.id})${ansi.reset}`);
+    lines.push(truncate(selectedTool.description ?? "No description", width));
+    lines.push(`Status: ${colorStatus(st)}  Category: ${selectedTool.category}`);
+    if (selectedTool.homepage) lines.push(truncate(`Homepage: ${selectedTool.homepage}`, width));
     const installCommand = chooseInstallCommand(selectedTool);
-    if (installCommand) console.log(`${ansi.dim}Install: ${installCommand}${ansi.reset}`);
+    if (installCommand) lines.push(`${ansi.dim}${truncate(`Install: ${installCommand}`, width)}${ansi.reset}`);
   } else {
-    console.log(`${ansi.dim}No tool selected.${ansi.reset}`);
+    lines.push(`${ansi.dim}No tool selected.${ansi.reset}`);
   }
+
+  process.stdout.write(`${ansi.home}${lines.join("\n")}${ansi.clearBelow}`);
 }
 
 async function readKey(): Promise<string> {
@@ -316,6 +510,8 @@ async function readKey(): Promise<string> {
 
 async function promptLine(label: string): Promise<string> {
   process.stdin.setRawMode?.(false);
+  process.stdin.resume();
+  process.stdin.setEncoding("utf8");
   process.stdout.write(label ? `\n${label}: ` : "\n");
   const line = await new Promise<string>((resolve) => {
     let buf = "";
@@ -323,6 +519,7 @@ async function promptLine(label: string): Promise<string> {
       const text = data.toString("utf8");
       if (text.includes("\n") || text.includes("\r")) {
         process.stdin.off("data", onData);
+        buf += text.replace(/[\r\n]+/g, "");
         resolve(buf.trim());
       } else {
         buf += text;
@@ -330,7 +527,7 @@ async function promptLine(label: string): Promise<string> {
     };
     process.stdin.on("data", onData);
   });
-  process.stdin.setRawMode?.(true);
+  enableRawInput();
   return line;
 }
 
@@ -345,100 +542,148 @@ function withUncheckedStatus(tools: Tool[]): Map<string, ToolStatus> {
   return new Map(tools.map((tool) => [tool.id, uncheckedStatus()]));
 }
 
-async function installMenu(tools: Tool[]) {
+async function installMenu(tools: Tool[], mode: "install" | "update-profile" = "install") {
   if (!process.stdin.isTTY) {
     console.error("Interactive menu requires a TTY. Try: bun run menu");
     process.exit(1);
   }
 
-  process.stdin.setRawMode?.(true);
+  process.stdout.write(ansi.clear);
+  process.stdin.setRawMode?.(false);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
-
-  process.stdout.write(ansi.clear);
-  console.log(`${ansi.bold}Install tools${ansi.reset}\n`);
-  console.log("You can skip version detection for a faster menu load.");
+  const isUpdateProfile = mode === "update-profile";
+  console.log(`${ansi.bold}${isUpdateProfile ? "Configure automatic updates" : "Install tools"}${ansi.reset}\n`);
+  console.log(isUpdateProfile ? "Choose the tools that should be updated by the saved update command." : "You can skip version detection for a faster menu load.");
+  // Ask before raw mode. Git Bash can lose the first keypress when switching modes.
   const shouldScan = await confirmLine("Check installed versions now", false);
 
   let status = shouldScan ? detectAllWithProgress(tools) : withUncheckedStatus(tools);
-  const state: MenuState = { cursor: 0, selected: new Set(), filter: "", category: "All", force: false };
+  const saved = isUpdateProfile ? loadUpdateProfile() : null;
+  const state: MenuState = {
+    cursor: 0,
+    scrollOffset: 0,
+    selected: new Set(saved?.toolIds ?? []),
+    filter: "",
+    category: "All",
+    force: isUpdateProfile,
+  };
   const categories = groupedCategories(tools);
+  enableRawInput();
+  process.stdout.write(ansi.clear + ansi.hideCursor);
 
-  while (true) {
-    renderInstallMenu(tools, status, state);
-    const visible = filteredTools(tools, state);
-    const key = await readKey();
+  try {
+    while (true) {
+      renderInstallMenu(tools, status, state);
+      const visible = filteredTools(tools, state);
+      const key = await readKey();
 
-    if (key === "\u0003" || key.toLowerCase() === "q") {
-      process.stdin.setRawMode?.(false);
-      process.stdout.write(ansi.showCursor + "\n");
-      process.exit(0);
-    }
+      if (key === "\u0003" || key.toLowerCase() === "q") {
+        restoreTerminal(true);
+        process.exit(0);
+      }
 
-    if (key === "\u001b[A") {
-      state.cursor = Math.max(0, state.cursor - 1);
-      continue;
-    }
-    if (key === "\u001b[B") {
-      state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + 1);
-      continue;
-    }
-    if (key === "\t") {
-      const idx = categories.indexOf(state.category);
-      state.category = categories[(idx + 1) % categories.length];
-      state.cursor = 0;
-      continue;
-    }
-    if (key === " ") {
-      const tool = visible[state.cursor];
-      if (tool) {
-        if (state.selected.has(tool.id)) state.selected.delete(tool.id);
-        else state.selected.add(tool.id);
+      if (key === "\u001b[A") {
+        state.cursor = Math.max(0, state.cursor - 1);
+        ensureCursorVisible(visible.length, state);
+        continue;
       }
-      continue;
-    }
-    if (key.toLowerCase() === "a" || key === "\u0001") {
-      const allSelected = visible.length > 0 && visible.every((tool) => state.selected.has(tool.id));
-      for (const tool of visible) {
-        if (allSelected) state.selected.delete(tool.id);
-        else state.selected.add(tool.id);
+      if (key === "\u001b[B") {
+        state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + 1);
+        ensureCursorVisible(visible.length, state);
+        continue;
       }
-      continue;
-    }
-    if (key.toLowerCase() === "c") {
-      const categoryTools = tools.filter((tool) => state.category === "All" || tool.category === state.category);
-      const allSelected = categoryTools.length > 0 && categoryTools.every((tool) => state.selected.has(tool.id));
-      for (const tool of categoryTools) {
-        if (allSelected) state.selected.delete(tool.id);
-        else state.selected.add(tool.id);
+      if (key === "\u001b[5~") {
+        state.cursor = Math.max(0, state.cursor - pageSize());
+        ensureCursorVisible(visible.length, state);
+        continue;
       }
-      continue;
+      if (key === "\u001b[6~") {
+        state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + pageSize());
+        ensureCursorVisible(visible.length, state);
+        continue;
+      }
+      if (key === "\u001b[H" || key === "\u001b[1~") {
+        state.cursor = 0;
+        ensureCursorVisible(visible.length, state);
+        continue;
+      }
+      if (key === "\u001b[F" || key === "\u001b[4~") {
+        state.cursor = Math.max(0, visible.length - 1);
+        ensureCursorVisible(visible.length, state);
+        continue;
+      }
+      if (key === "\t") {
+        const idx = categories.indexOf(state.category);
+        state.category = categories[(idx + 1) % categories.length];
+        state.cursor = 0;
+        state.scrollOffset = 0;
+        continue;
+      }
+      if (key === " ") {
+        const tool = visible[state.cursor];
+        if (tool) {
+          if (state.selected.has(tool.id)) state.selected.delete(tool.id);
+          else state.selected.add(tool.id);
+        }
+        continue;
+      }
+      if (key.toLowerCase() === "a" || key === "\u0001") {
+        const allSelected = visible.length > 0 && visible.every((tool) => state.selected.has(tool.id));
+        for (const tool of visible) {
+          if (allSelected) state.selected.delete(tool.id);
+          else state.selected.add(tool.id);
+        }
+        continue;
+      }
+      if (key.toLowerCase() === "c") {
+        const categoryTools = tools.filter((tool) => state.category === "All" || tool.category === state.category);
+        const allSelected = categoryTools.length > 0 && categoryTools.every((tool) => state.selected.has(tool.id));
+        for (const tool of categoryTools) {
+          if (allSelected) state.selected.delete(tool.id);
+          else state.selected.add(tool.id);
+        }
+        continue;
+      }
+      if (key.toLowerCase() === "f") {
+        state.force = !state.force;
+        continue;
+      }
+      if (key.toLowerCase() === "v") {
+        status = detectAllWithProgress(tools, "Refreshing installed versions");
+        process.stdout.write(ansi.clear + ansi.hideCursor);
+        continue;
+      }
+      if (key === "/") {
+        state.filter = await promptLine("Search");
+        state.cursor = 0;
+        state.scrollOffset = 0;
+        process.stdout.write(ansi.clear + ansi.hideCursor);
+        continue;
+      }
+      if (key === "\b" || key === "\x7f" || key === "\u001b") {
+        restoreTerminal(false);
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        restoreTerminal(true);
+        const selected = tools.filter((tool) => state.selected.has(tool.id));
+        if (isUpdateProfile) {
+          const save = await confirmLine(`Save ${selected.length} selected tools as the automatic update profile`, true);
+          if (save) {
+            saveUpdateProfile(selected.map((tool) => tool.id));
+            console.log(`Saved update profile: ${updateProfilePath}`);
+          } else {
+            console.log("Update profile was not changed.");
+          }
+        } else {
+          await installTools(selected, status, state.force);
+        }
+        return;
+      }
     }
-    if (key.toLowerCase() === "f") {
-      state.force = !state.force;
-      continue;
-    }
-    if (key.toLowerCase() === "v") {
-      status = detectAllWithProgress(tools, "Refreshing installed versions");
-      continue;
-    }
-    if (key === "/") {
-      state.filter = await promptLine("Search");
-      state.cursor = 0;
-      continue;
-    }
-    if (key === "\b" || key === "\x7f" || key === "\u001b") {
-      process.stdin.setRawMode?.(false);
-      process.stdout.write(ansi.showCursor);
-      return;
-    }
-    if (key === "\r" || key === "\n") {
-      process.stdin.setRawMode?.(false);
-      process.stdout.write("\n");
-      const selected = tools.filter((tool) => state.selected.has(tool.id));
-      await installTools(selected, status, state.force);
-      return;
-    }
+  } finally {
+    process.stdout.write(ansi.showCursor);
   }
 }
 
@@ -494,6 +739,61 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
   }
 }
 
+function resolveToolsByIds(tools: Tool[], ids: string[]): Tool[] {
+  return tools.filter((tool) => ids.includes(tool.id));
+}
+
+async function updateTools(tools: Tool[], status = withUncheckedStatus(tools)) {
+  if (tools.length === 0) {
+    console.log("No tools selected for update.");
+    return;
+  }
+
+  const unchecked = tools.filter((tool) => (status.get(tool.id) ?? uncheckedStatus()).kind === "unchecked");
+  if (unchecked.length > 0) {
+    const refreshed = detectAllWithProgress(unchecked, "Checking saved tools before update");
+    for (const [toolId, toolStatus] of refreshed) status.set(toolId, toolStatus);
+  }
+
+  const missing = tools.filter((tool) => !status.get(tool.id)?.installed);
+  if (missing.length > 0) {
+    console.log("Skipping tools that are not installed:");
+    for (const tool of missing) console.log(`- ${tool.name}`);
+  }
+
+  for (const tool of tools) {
+    const before = status.get(tool.id) ?? uncheckedStatus();
+    if (!before.installed) continue;
+
+    if (platform() === "windows" && tool.install?.winget && !tool.update?.command) {
+      const managedByWinget = canUseWingetForUpdate(tool.install.winget);
+      if (!managedByWinget) {
+        console.log(`\nSKIP ${tool.name}: installed, but not managed by winget on this machine.`);
+        if (tool.update?.note) console.log(tool.update.note);
+        else if (tool.homepage) console.log(`Homepage: ${tool.homepage}`);
+        continue;
+      }
+    }
+
+    const command = updateCommand(tool);
+    if (!command) {
+      console.log(`\nSKIP ${tool.name}: no updater configured on ${platform()}.`);
+      if (tool.update?.note) console.log(tool.update.note);
+      continue;
+    }
+
+    console.log(`\n==> Updating ${tool.name} (current: ${before.version})`);
+    console.log(`$ ${command}`);
+    const code = runInteractive(command);
+    const after = detectStatus(tool);
+    status.set(tool.id, after);
+
+    if (code === 0 && after.installed) console.log(`OK ${tool.name}: ${before.version} -> ${after.version}`);
+    else if (code === 0) console.log(`DONE ${tool.name}, but verify did not detect it. Restart terminal or check PATH.`);
+    else console.log(`FAILED ${tool.name} exit=${code}`);
+  }
+}
+
 function listTools(tools: Tool[], withStatus = false) {
   const status = withStatus ? detectAllWithProgress(tools, "Checking installed versions") : withUncheckedStatus(tools);
   let lastCategory = "";
@@ -525,6 +825,8 @@ function doctor(tools: Tool[]) {
 async function mainMenu(tools: Tool[]) {
   const options = [
     "Install tools",
+    "Configure automatic update list",
+    "Update saved tools now",
     "Doctor",
     "List tools",
     "List tools with versions",
@@ -532,9 +834,7 @@ async function mainMenu(tools: Tool[]) {
   ];
   let cursor = 0;
 
-  process.stdin.setRawMode?.(true);
-  process.stdin.resume();
-  process.stdin.setEncoding("utf8");
+  enableRawInput();
 
   while (true) {
     process.stdout.write(ansi.clear);
@@ -547,7 +847,10 @@ async function mainMenu(tools: Tool[]) {
     }
 
     const key = await readKey();
-    if (key === "\u0003" || key.toLowerCase() === "q") break;
+    if (key === "\u0003" || key.toLowerCase() === "q") {
+      restoreTerminal(true);
+      return;
+    }
     if (key === "\u001b[A") {
       cursor = Math.max(0, cursor - 1);
       continue;
@@ -557,24 +860,35 @@ async function mainMenu(tools: Tool[]) {
       continue;
     }
     if (key === "\r" || key === "\n") {
-      process.stdin.setRawMode?.(false);
+      disableRawInput();
       process.stdout.write("\n");
       if (cursor === 0) await installMenu(tools);
-      else if (cursor === 1) doctor(tools);
-      else if (cursor === 2) listTools(tools, false);
-      else if (cursor === 3) listTools(tools, true);
+      else if (cursor === 1) await installMenu(tools, "update-profile");
+      else if (cursor === 2) {
+        const profile = loadUpdateProfile();
+        const selected = resolveToolsByIds(tools, profile.toolIds);
+        if (profile.toolIds.length === 0) {
+          console.log("No saved update profile. Choose 'Configure automatic update list' first.");
+        } else {
+          const unknown = profile.toolIds.filter((id) => !selected.some((tool) => tool.id === id));
+          if (unknown.length > 0) console.log(`Ignoring removed/unknown tool ids: ${unknown.join(", ")}`);
+          await updateTools(selected);
+        }
+      }
+      else if (cursor === 3) doctor(tools);
+      else if (cursor === 4) listTools(tools, false);
+      else if (cursor === 5) listTools(tools, true);
       else break;
 
       if (cursor !== 0) {
         console.log("\nPress Enter to return.");
         await promptLine("");
       }
-      process.stdin.setRawMode?.(true);
+      enableRawInput();
     }
   }
 
-  process.stdin.setRawMode?.(false);
-  process.stdout.write(ansi.showCursor);
+  restoreTerminal(false);
 }
 
 async function main() {
@@ -598,6 +912,21 @@ async function main() {
     if (missing.length > 0) console.log(`Unknown tool ids: ${missing.join(", ")}`);
     return await installTools(selected, detectAllWithProgress(selected, "Checking installed versions"), force);
   }
+  if (cmd === "update") {
+    const useAll = args.includes("--all");
+    const ids = args.filter((arg) => arg !== "--all");
+    const profile = loadUpdateProfile();
+    const requestedIds = useAll ? tools.map((tool) => tool.id) : ids.length > 0 ? ids : profile.toolIds;
+    const selected = resolveToolsByIds(tools, requestedIds);
+    const missing = requestedIds.filter((id) => !selected.some((tool) => tool.id === id));
+    if (missing.length > 0) console.log(`Unknown tool ids: ${missing.join(", ")}`);
+    if (requestedIds.length === 0) {
+      console.log("No saved update profile. Run: bun run menu, then choose 'Configure automatic update list'.");
+      process.exitCode = 1;
+      return;
+    }
+    return await updateTools(selected);
+  }
 
   console.log(`Usage:
   bun run menu
@@ -605,6 +934,7 @@ async function main() {
   bun run list -- --versions
   bun run doctor
   bun run src/index.ts install <tool-id...> [--force]
+  bun run src/index.ts update [<tool-id...> | --all]
 `);
 }
 
