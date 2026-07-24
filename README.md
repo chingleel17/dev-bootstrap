@@ -38,13 +38,13 @@ Important: `bun install` only installs this project's dependencies. It no longer
 ```bash
 bun run menu
 bun run list
-bun run list -- --versions
+bun run list --versions
 bun run doctor
 bun run src/index.ts install bun opencode claude
 bun run src/index.ts install bun opencode claude --force
 bun run update
-bun run update -- codex claude opencode
-bun run update -- --all
+bun run update codex claude opencode openspec copilot
+bun run update --all
 ```
 
 ## Menu controls

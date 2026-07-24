@@ -10,6 +10,7 @@ const toolsDir = join(rootDir, "tools");
 const configDir = join(rootDir, ".dev-bootstrap");
 const updateProfilePath = join(configDir, "update-profile.json");
 const VERIFY_TIMEOUT_MS = 10000;
+const WINGET_NO_UPGRADE_EXIT_CODE = 43;
 
 type Platform = "windows" | "mac" | "linux";
 type InstallSpec = {
@@ -139,6 +140,11 @@ function runInteractive(command: string): number | null {
   return proc.status;
 }
 
+function isWingetUpToDateResult(command: string, code: number | null): boolean {
+  if (!command.trim().startsWith("winget upgrade")) return false;
+  return code === WINGET_NO_UPGRADE_EXIT_CODE;
+}
+
 function loadTools(): Tool[] {
   if (!existsSync(toolsDir)) throw new Error(`Missing tools directory: ${toolsDir}`);
   const files = readdirSync(toolsDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
@@ -186,7 +192,7 @@ function versionFromOutput(output: string, regex?: string): string {
     try {
       const m = text.match(new RegExp(regex));
       if (m?.[1]) return m[1];
-    } catch {}
+    } catch { }
   }
   const m = text.match(/v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?/);
   return m?.[0] ?? text.slice(0, 80);
@@ -198,7 +204,7 @@ function hasVersionInOutput(output: string, regex?: string): boolean {
   if (regex) {
     try {
       if (new RegExp(regex).test(text)) return true;
-    } catch {}
+    } catch { }
   }
   return /v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?/.test(text);
 }
@@ -441,9 +447,9 @@ function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state
   lines.push(
     truncate(
       `Filter: ${state.filter ? state.filter : "none"}  ` +
-        `Selected: ${state.selected.size}  ` +
-        `Visible: ${visible.length}/${tools.length}  ` +
-        `Showing: ${visible.length === 0 ? 0 : state.scrollOffset + 1}-${Math.min(visible.length, state.scrollOffset + size)}`,
+      `Selected: ${state.selected.size}  ` +
+      `Visible: ${visible.length}/${tools.length}  ` +
+      `Showing: ${visible.length === 0 ? 0 : state.scrollOffset + 1}-${Math.min(visible.length, state.scrollOffset + size)}`,
       width,
     ),
   );
@@ -789,6 +795,7 @@ async function updateTools(tools: Tool[], status = withUncheckedStatus(tools)) {
     status.set(tool.id, after);
 
     if (code === 0 && after.installed) console.log(`OK ${tool.name}: ${before.version} -> ${after.version}`);
+    else if (isWingetUpToDateResult(command, code) && after.installed) console.log(`UP-TO-DATE ${tool.name}: ${after.version}`);
     else if (code === 0) console.log(`DONE ${tool.name}, but verify did not detect it. Restart terminal or check PATH.`);
     else console.log(`FAILED ${tool.name} exit=${code}`);
   }

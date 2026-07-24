@@ -3,6 +3,9 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "dev-bootstrap": "./src/index.ts"
+  },
   "scripts": {
     "dev": "bun run src/index.ts",
     "menu": "bun run src/index.ts menu",
