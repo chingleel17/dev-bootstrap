@@ -40,6 +40,12 @@ jobs:
       - name: Build
         run: bun run build
 
+      # npm 對 bin 指向的檔案要求可執行位元，Linux runner 上
+      # bun build 產出的檔案不一定帶有此位元，缺少時 npm publish
+      # 會直接移除該筆 bin 記錄（僅顯示 warning，不會讓建置失敗）。
+      - name: Ensure bin is executable
+        run: chmod +x dist/index.js
+
       - name: Verify CLI runs on Node
         run: node dist/index.js list
 
