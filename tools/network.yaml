@@ -42,7 +42,7 @@
   category: Network
   description: SSL/TLS toolkit
   install:
-    winget: "ShiningLight.OpenSSL"
+    winget: "ShiningLight.OpenSSL.Light"
     brew: "openssl"
     apt: "openssl"
   verify:

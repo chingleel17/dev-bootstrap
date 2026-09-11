@@ -30,7 +30,7 @@
   description: AI coding agent CLI
   homepage: https://opencode.ai
   install:
-    npm: "opencode-ai"
+    bun: "opencode-ai"
   update:
     command: "opencode upgrade"
   verify:
@@ -57,4 +57,19 @@
     npm: "@fission-ai/openspec"
   verify:
     - command: "openspec --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: herdr
+  name: Herdr
+  category: AI
+  description: AI coding agent terminal workspace manager
+  homepage: https://herdr.dev
+  install:
+    powershell: "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://herdr.dev/install.ps1 | iex\""
+    script: "curl -fsSL https://herdr.dev/install.sh | sh"
+  update:
+    command: "herdr update"
+    note: "從設定的發布頻道下載並安裝最新版。"
+  verify:
+    - command: "herdr --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
