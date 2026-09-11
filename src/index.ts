@@ -1,13 +1,34 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const toolsDir = join(rootDir, "tools");
-const configDir = join(rootDir, ".dev-bootstrap");
+
+/**
+ * 設定目錄解析順序：
+ * 1. DEV_BOOTSTRAP_HOME 環境變數（供 CI 或自訂路徑使用）
+ * 2. 當前目錄已存在的 .dev-bootstrap（相容舊版專案內設定）
+ * 3. 使用者家目錄 ~/.dev-bootstrap（全域安裝後的預設位置）
+ *
+ * 不可使用套件所在目錄，否則全域安裝後設定會落在 node_modules 內，
+ * 每次升級都會被清除。
+ */
+function resolveConfigDir(): string {
+  const fromEnv = process.env.DEV_BOOTSTRAP_HOME;
+  if (fromEnv) return fromEnv;
+
+  const localDir = join(process.cwd(), ".dev-bootstrap");
+  if (existsSync(localDir)) return localDir;
+
+  return join(homedir(), ".dev-bootstrap");
+}
+
+const configDir = resolveConfigDir();
 const updateProfilePath = join(configDir, "update-profile.json");
 const VERIFY_TIMEOUT_MS = 10000;
 const WINGET_NO_UPGRADE_EXIT_CODE = 43;
@@ -900,7 +921,7 @@ async function mainMenu(tools: Tool[]) {
 
 async function main() {
   const tools = loadTools();
-  const [cmd, ...args] = Bun.argv.slice(2);
+  const [cmd, ...args] = process.argv.slice(2);
 
   if (!cmd || cmd === "menu") {
     return await mainMenu(tools);
@@ -928,7 +949,7 @@ async function main() {
     const missing = requestedIds.filter((id) => !selected.some((tool) => tool.id === id));
     if (missing.length > 0) console.log(`Unknown tool ids: ${missing.join(", ")}`);
     if (requestedIds.length === 0) {
-      console.log("No saved update profile. Run: bun run menu, then choose 'Configure automatic update list'.");
+      console.log("No saved update profile. Run: dev-bootstrap menu, then choose 'Configure automatic update list'.");
       process.exitCode = 1;
       return;
     }
@@ -936,12 +957,11 @@ async function main() {
   }
 
   console.log(`Usage:
-  bun run menu
-  bun run list
-  bun run list -- --versions
-  bun run doctor
-  bun run src/index.ts install <tool-id...> [--force]
-  bun run src/index.ts update [<tool-id...> | --all]
+  dev-bootstrap menu
+  dev-bootstrap list [--versions]
+  dev-bootstrap doctor
+  dev-bootstrap install <tool-id...> [--force]
+  dev-bootstrap update [<tool-id...> | --all]
 `);
 }
 

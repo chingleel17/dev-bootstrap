@@ -1,20 +1,54 @@
 {
   "name": "dev-bootstrap",
-  "version": "0.2.0",
-  "private": true,
+  "version": "0.2.1",
+  "description": "Cross-platform development environment bootstrapper: install and keep CLI tools up to date via winget, brew, npm and bun.",
   "type": "module",
+  "license": "MIT",
+  "author": "lee_ching",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chingleel17/dev-bootstrap.git"
+  },
+  "homepage": "https://github.com/chingleel17/dev-bootstrap#readme",
+  "bugs": {
+    "url": "https://github.com/chingleel17/dev-bootstrap/issues"
+  },
+  "keywords": [
+    "cli",
+    "bootstrap",
+    "developer-tools",
+    "winget",
+    "homebrew",
+    "setup",
+    "dotfiles"
+  ],
   "bin": {
-    "dev-bootstrap": "./src/index.ts"
+    "dev-bootstrap": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "tools",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --format esm",
+    "typecheck": "tsc --noEmit",
     "dev": "bun run src/index.ts",
     "menu": "bun run src/index.ts menu",
     "list": "bun run src/index.ts list",
     "doctor": "bun run src/index.ts doctor",
     "install-tools": "bun run src/index.ts install",
-    "update": "bun run src/index.ts update"
+    "update": "bun run src/index.ts update",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
   }
 }
