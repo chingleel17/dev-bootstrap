@@ -7,7 +7,7 @@
   <a href="https://www.npmjs.com/package/dev-bootstrap"><img src="https://img.shields.io/npm/v/dev-bootstrap?style=for-the-badge&color=2563eb&label=version" alt="npm version"></a>
   <a href="https://github.com/chingleel17/dev-bootstrap/releases"><img src="https://img.shields.io/github/v/release/chingleel17/dev-bootstrap?style=for-the-badge&color=7c3aed" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-475569?style=for-the-badge" alt="Platform Windows | macOS | Linux">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a?style=for-the-badge" alt="License MIT"></a>
+  <a href="https://github.com/chingleel17/dev-bootstrap/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-16a34a?style=for-the-badge" alt="License MIT"></a>
   <img src="https://img.shields.io/badge/stack-Node.js%20%2B%20Bun%20%2B%20TypeScript-f97316?style=for-the-badge" alt="Stack Node.js + Bun + TypeScript">
 </p>
 
@@ -198,4 +198,4 @@ bun run typecheck    # 型別檢查
 
 ## 授權
 
-[MIT](LICENSE)
+[MIT](https://github.com/chingleel17/dev-bootstrap/blob/main/LICENSE)
