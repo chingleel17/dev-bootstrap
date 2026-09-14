@@ -23,7 +23,7 @@
     "dotfiles"
   ],
   "bin": {
-    "dev-bootstrap": "./dist/index.js"
+    "dev-bootstrap": "dist/index.js"
   },
   "files": [
     "dist",
