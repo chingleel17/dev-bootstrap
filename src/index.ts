@@ -9,6 +9,17 @@ import YAML from "yaml";
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const toolsDir = join(rootDir, "tools");
 
+/** 從 package.json 取得版本，避免在畫面上寫死版本號。 */
+function readPackageVersion(): string {
+  try {
+    return JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8")).version ?? "";
+  } catch {
+    return "";
+  }
+}
+
+const APP_VERSION = readPackageVersion();
+
 /**
  * 設定目錄解析順序：
  * 1. DEV_BOOTSTRAP_HOME 環境變數（供 CI 或自訂路徑使用）
@@ -94,6 +105,7 @@ const ansi = {
   clear: "\x1b[2J\x1b[H",
   home: "\x1b[H",
   clearBelow: "\x1b[J",
+  clearLineEnd: "\x1b[K",
   hideCursor: "\x1b[?25l",
   showCursor: "\x1b[?25h",
 };
@@ -311,7 +323,8 @@ function detectAllWithProgress(tools: Tool[], label = "Checking installed versio
           "",
           `[${"#".repeat(pct)}${"-".repeat(24 - pct)}] ${i + 1}/${tools.length}`,
         ];
-        process.stdout.write(`${i === 0 ? ansi.clear : ansi.home}${lines.join("\n")}${ansi.clearBelow}`);
+        const painted = lines.map((line) => `${line}${ansi.clearLineEnd}`).join("\n");
+        process.stdout.write(`${i === 0 ? ansi.clear : ansi.home}${painted}${ansi.clearBelow}`);
       }
       status.set(tool.id, detectStatus(tool));
     }
@@ -411,9 +424,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+// 選單固定佔用的行數：
+// header 6（標題、說明、空行、分類、狀態列、分隔線）
+// footer 8（空行、分隔線、名稱、描述、狀態、homepage、install，加 1 行緩衝）
+// 滾動提示 2（上方/下方各一行）
+const MENU_CHROME_ROWS = 16;
+// 視窗內每組分類標題會額外佔用 2 行（空行 + 分類名稱），預留 2 組。
+const CATEGORY_HEADER_ROWS = 4;
+
 function pageSize(): number {
   const rows = process.stdout.rows ?? 30;
-  return clamp(rows - 23, 6, 12);
+  const available = rows - MENU_CHROME_ROWS - CATEGORY_HEADER_ROWS;
+  // 終端過矮時仍至少顯示 3 行，讓選單維持可用（此時畫面會捲動）。
+  return Math.max(3, Math.min(available, 60));
 }
 
 function screenWidth(): number {
@@ -456,7 +479,7 @@ function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state
     .map((category) => (category === state.category ? `[${category}]` : category))
     .join(" | ");
 
-  lines.push(`${ansi.bold}dev-bootstrap${ansi.reset} ${ansi.dim}v0.2${ansi.reset}`);
+  lines.push(`${ansi.bold}dev-bootstrap${ansi.reset}${APP_VERSION ? ` ${ansi.dim}v${APP_VERSION}${ansi.reset}` : ""}`);
   lines.push(
     `${ansi.dim}${truncate(
       `Space toggle | A/Ctrl+A visible items | C ${categoryActionLabel} | Tab category | / search | V refresh versions | F force ${state.force ? "on" : "off"} | Enter install | Backspace back | Q quit`,
@@ -522,7 +545,9 @@ function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state
     lines.push(`${ansi.dim}No tool selected.${ansi.reset}`);
   }
 
-  process.stdout.write(`${ansi.home}${lines.join("\n")}${ansi.clearBelow}`);
+  // 每行結尾清到行尾，避免新行比舊行短時殘留前一次的字元。
+  const painted = lines.map((line) => `${line}${ansi.clearLineEnd}`).join("\n");
+  process.stdout.write(`${ansi.home}${painted}${ansi.clearBelow}`);
 }
 
 async function readKey(): Promise<string> {
