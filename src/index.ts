@@ -108,7 +108,25 @@ const ansi = {
   clearLineEnd: "\x1b[K",
   hideCursor: "\x1b[?25l",
   showCursor: "\x1b[?25h",
+  // 替代畫面緩衝區：全螢幕介面在獨立畫面繪製，離開後還原原本的終端內容，
+  // 避免每次重繪把畫面推進捲動緩衝區而殘留大量歷史。
+  enterAltScreen: "\x1b[?1049h",
+  exitAltScreen: "\x1b[?1049l",
 };
+
+let altScreenActive = false;
+
+function enterAltScreen() {
+  if (altScreenActive || !process.stdout.isTTY) return;
+  process.stdout.write(ansi.enterAltScreen);
+  altScreenActive = true;
+}
+
+function exitAltScreen() {
+  if (!altScreenActive) return;
+  process.stdout.write(`${ansi.showCursor}${ansi.exitAltScreen}`);
+  altScreenActive = false;
+}
 
 function enableRawInput() {
   process.stdin.setRawMode?.(true);
@@ -123,6 +141,7 @@ function disableRawInput() {
 
 function restoreTerminal(newline = false) {
   disableRawInput();
+  exitAltScreen();
   process.stdout.write(`${ansi.showCursor}${newline ? "\n" : ""}`);
 }
 
@@ -426,17 +445,29 @@ function clamp(value: number, min: number, max: number): number {
 
 // 選單固定佔用的行數：
 // header 6（標題、說明、空行、分類、狀態列、分隔線）
-// footer 8（空行、分隔線、名稱、描述、狀態、homepage、install，加 1 行緩衝）
+// footer 8（空行、分隔線、名稱、描述、狀態、homepage、install）
 // 滾動提示 2（上方/下方各一行）
 const MENU_CHROME_ROWS = 16;
-// 視窗內每組分類標題會額外佔用 2 行（空行 + 分類名稱），預留 2 組。
-const CATEGORY_HEADER_ROWS = 4;
 
-function pageSize(): number {
+/**
+ * 可顯示的工具列數。
+ *
+ * 每組分類標題會額外佔用 2 行（空行 + 分類名稱），而組數取決於捲動位置，
+ * 因此以實際會進入視窗的工具反推，逐步收斂到不超出終端高度的最大值。
+ */
+function pageSize(visible?: Tool[], scrollOffset = 0): number {
   const rows = process.stdout.rows ?? 30;
-  const available = rows - MENU_CHROME_ROWS - CATEGORY_HEADER_ROWS;
-  // 終端過矮時仍至少顯示 3 行，讓選單維持可用（此時畫面會捲動）。
-  return Math.max(3, Math.min(available, 60));
+  const budget = rows - MENU_CHROME_ROWS;
+  if (!visible || visible.length === 0) return Math.max(3, Math.min(budget, 60));
+
+  let size = Math.max(3, Math.min(budget, 60));
+  while (size > 3) {
+    const windowed = visible.slice(scrollOffset, scrollOffset + size);
+    const categories = new Set(windowed.map((tool) => tool.category)).size;
+    if (size + categories * 2 <= budget) break;
+    size--;
+  }
+  return size;
 }
 
 function screenWidth(): number {
@@ -450,8 +481,9 @@ function truncate(value: string, width: number): string {
   return `${value.slice(0, width - 3)}...`;
 }
 
-function ensureCursorVisible(visibleCount: number, state: MenuState) {
-  const size = pageSize();
+function ensureCursorVisible(visible: Tool[], state: MenuState) {
+  const visibleCount = visible.length;
+  const size = pageSize(visible, state.scrollOffset);
   state.cursor = clamp(state.cursor, 0, Math.max(0, visibleCount - 1));
   state.scrollOffset = clamp(state.scrollOffset, 0, Math.max(0, visibleCount - size));
 
@@ -465,9 +497,9 @@ function ensureCursorVisible(visibleCount: number, state: MenuState) {
 
 function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state: MenuState) {
   const visible = filteredTools(tools, state);
-  ensureCursorVisible(visible.length, state);
+  ensureCursorVisible(visible, state);
   const selectedTool = currentTool(visible, state);
-  const size = pageSize();
+  const size = pageSize(visible, state.scrollOffset);
   const windowed = visible.slice(state.scrollOffset, state.scrollOffset + size);
   const width = screenWidth();
   const lines: string[] = [];
@@ -638,6 +670,7 @@ async function installMenu(
   };
   const categories = groupedCategories(tools);
   enableRawInput();
+  enterAltScreen();
   process.stdout.write(ansi.clear + ansi.hideCursor);
 
   try {
@@ -653,32 +686,32 @@ async function installMenu(
 
       if (key === "\u001b[A") {
         state.cursor = Math.max(0, state.cursor - 1);
-        ensureCursorVisible(visible.length, state);
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\u001b[B") {
         state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + 1);
-        ensureCursorVisible(visible.length, state);
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\u001b[5~") {
-        state.cursor = Math.max(0, state.cursor - pageSize());
-        ensureCursorVisible(visible.length, state);
+        state.cursor = Math.max(0, state.cursor - pageSize(visible, state.scrollOffset));
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\u001b[6~") {
-        state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + pageSize());
-        ensureCursorVisible(visible.length, state);
+        state.cursor = Math.min(Math.max(0, visible.length - 1), state.cursor + pageSize(visible, state.scrollOffset));
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\u001b[H" || key === "\u001b[1~") {
         state.cursor = 0;
-        ensureCursorVisible(visible.length, state);
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\u001b[F" || key === "\u001b[4~") {
         state.cursor = Math.max(0, visible.length - 1);
-        ensureCursorVisible(visible.length, state);
+        ensureCursorVisible(visible, state);
         continue;
       }
       if (key === "\t") {
@@ -753,6 +786,7 @@ async function installMenu(
       }
     }
   } finally {
+    exitAltScreen();
     process.stdout.write(ansi.showCursor);
   }
 }
@@ -1033,7 +1067,16 @@ async function main() {
 `);
 }
 
+// 保險機制：任何離開路徑都必須還原終端，否則使用者的終端會卡在
+// 替代畫面或隱藏游標的狀態。
+process.on("exit", () => {
+  exitAltScreen();
+  // 僅在互動終端還原游標，避免污染管線或重導向的輸出。
+  if (process.stdout.isTTY) process.stdout.write(ansi.showCursor);
+});
+
 main().catch((err) => {
+  restoreTerminal(false);
   console.error(err);
   process.exit(1);
 });
