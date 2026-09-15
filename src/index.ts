@@ -569,7 +569,11 @@ function withUncheckedStatus(tools: Tool[]): Map<string, ToolStatus> {
   return new Map(tools.map((tool) => [tool.id, uncheckedStatus()]));
 }
 
-async function installMenu(tools: Tool[], mode: "install" | "update-profile" = "install") {
+async function installMenu(
+  tools: Tool[],
+  mode: "install" | "update-profile" = "install",
+  sharedStatus?: Map<string, ToolStatus>,
+) {
   if (!process.stdin.isTTY) {
     console.error("Interactive menu requires a TTY. Try: bun run menu");
     process.exit(1);
@@ -582,10 +586,22 @@ async function installMenu(tools: Tool[], mode: "install" | "update-profile" = "
   const isUpdateProfile = mode === "update-profile";
   console.log(`${ansi.bold}${isUpdateProfile ? "Configure automatic updates" : "Install tools"}${ansi.reset}\n`);
   console.log(isUpdateProfile ? "Choose the tools that should be updated by the saved update command." : "You can skip version detection for a faster menu load.");
-  // Ask before raw mode. Git Bash can lose the first keypress when switching modes.
-  const shouldScan = await confirmLine("Check installed versions now", false);
 
-  let status = shouldScan ? detectAllWithProgress(tools) : withUncheckedStatus(tools);
+  // 沿用本次執行期間已掃描過的結果，避免重複進出選單時反覆詢問與掃描。
+  // 以 V 鍵可隨時重新掃描。
+  let status = sharedStatus ?? withUncheckedStatus(tools);
+  const alreadyScanned = [...status.values()].some((s) => s.kind !== "unchecked");
+  if (alreadyScanned) {
+    const scanned = [...status.values()].filter((s) => s.kind !== "unchecked").length;
+    console.log(`${ansi.dim}Using cached versions for ${scanned} tools. Press V in the menu to rescan.${ansi.reset}`);
+  } else {
+    // Ask before raw mode. Git Bash can lose the first keypress when switching modes.
+    const shouldScan = await confirmLine("Check installed versions now", false);
+    if (shouldScan) {
+      const detected = detectAllWithProgress(tools);
+      for (const [toolId, toolStatus] of detected) status.set(toolId, toolStatus);
+    }
+  }
   const saved = isUpdateProfile ? loadUpdateProfile() : null;
   const state: MenuState = {
     cursor: 0,
@@ -677,7 +693,9 @@ async function installMenu(tools: Tool[], mode: "install" | "update-profile" = "
         continue;
       }
       if (key.toLowerCase() === "v") {
-        status = detectAllWithProgress(tools, "Refreshing installed versions");
+        // 原地更新，讓主選單傳入的共用快取也一併刷新。
+        const refreshed = detectAllWithProgress(tools, "Refreshing installed versions");
+        for (const [toolId, toolStatus] of refreshed) status.set(toolId, toolStatus);
         process.stdout.write(ansi.clear + ansi.hideCursor);
         continue;
       }
@@ -822,8 +840,22 @@ async function updateTools(tools: Tool[], status = withUncheckedStatus(tools)) {
   }
 }
 
-function listTools(tools: Tool[], withStatus = false) {
-  const status = withStatus ? detectAllWithProgress(tools, "Checking installed versions") : withUncheckedStatus(tools);
+function listTools(tools: Tool[], withStatus = false, sharedStatus?: Map<string, ToolStatus>) {
+  let status: Map<string, ToolStatus>;
+  if (!withStatus) {
+    status = withUncheckedStatus(tools);
+  } else {
+    // 已有本次執行期間掃描過的結果就沿用，避免重複掃描。
+    const cachedCount = sharedStatus
+      ? tools.filter((tool) => (sharedStatus.get(tool.id)?.kind ?? "unchecked") !== "unchecked").length
+      : 0;
+    if (sharedStatus && cachedCount === tools.length) {
+      status = sharedStatus;
+    } else {
+      status = detectAllWithProgress(tools, "Checking installed versions");
+      if (sharedStatus) for (const [toolId, toolStatus] of status) sharedStatus.set(toolId, toolStatus);
+    }
+  }
   let lastCategory = "";
 
   for (const tool of tools) {
@@ -836,8 +868,11 @@ function listTools(tools: Tool[], withStatus = false) {
   }
 }
 
-function doctor(tools: Tool[]) {
+function doctor(tools: Tool[], sharedStatus?: Map<string, ToolStatus>) {
+  // Doctor 一律重新掃描：診斷的目的就是反映當下實際狀態。
+  // 掃描結果寫回共用快取，讓後續選單可以直接沿用。
   const status = detectAllWithProgress(tools, "Doctor: checking installed tools");
+  if (sharedStatus) for (const [toolId, toolStatus] of status) sharedStatus.set(toolId, toolStatus);
   let installed = 0;
 
   for (const tool of tools) {
@@ -861,14 +896,22 @@ async function mainMenu(tools: Tool[]) {
     "Exit",
   ];
   let cursor = 0;
+  // 本次執行期間共用的版本掃描快取，避免每次進出選單都重新詢問與掃描。
+  const sessionStatus = withUncheckedStatus(tools);
 
   enableRawInput();
 
   while (true) {
+    const scanned = [...sessionStatus.values()].filter((s) => s.kind !== "unchecked").length;
     process.stdout.write(ansi.clear);
     console.log(`${ansi.bold}dev-bootstrap${ansi.reset}`);
     console.log(`${ansi.dim}Arrow keys move | Enter select | Q quit${ansi.reset}\n`);
-    console.log(`${ansi.magenta}Platform:${ansi.reset} ${platform()}\n`);
+    console.log(`${ansi.magenta}Platform:${ansi.reset} ${platform()}`);
+    console.log(
+      scanned > 0
+        ? `${ansi.magenta}Versions:${ansi.reset} ${scanned}/${tools.length} scanned this session\n`
+        : `${ansi.magenta}Versions:${ansi.reset} ${ansi.dim}not scanned yet${ansi.reset}\n`,
+    );
     for (let i = 0; i < options.length; i++) {
       const pointer = i === cursor ? `${ansi.cyan}>${ansi.reset}` : " ";
       console.log(`${pointer} ${options[i]}`);
@@ -890,8 +933,8 @@ async function mainMenu(tools: Tool[]) {
     if (key === "\r" || key === "\n") {
       disableRawInput();
       process.stdout.write("\n");
-      if (cursor === 0) await installMenu(tools);
-      else if (cursor === 1) await installMenu(tools, "update-profile");
+      if (cursor === 0) await installMenu(tools, "install", sessionStatus);
+      else if (cursor === 1) await installMenu(tools, "update-profile", sessionStatus);
       else if (cursor === 2) {
         const profile = loadUpdateProfile();
         const selected = resolveToolsByIds(tools, profile.toolIds);
@@ -900,12 +943,12 @@ async function mainMenu(tools: Tool[]) {
         } else {
           const unknown = profile.toolIds.filter((id) => !selected.some((tool) => tool.id === id));
           if (unknown.length > 0) console.log(`Ignoring removed/unknown tool ids: ${unknown.join(", ")}`);
-          await updateTools(selected);
+          await updateTools(selected, sessionStatus);
         }
       }
-      else if (cursor === 3) doctor(tools);
+      else if (cursor === 3) doctor(tools, sessionStatus);
       else if (cursor === 4) listTools(tools, false);
-      else if (cursor === 5) listTools(tools, true);
+      else if (cursor === 5) listTools(tools, true, sessionStatus);
       else break;
 
       if (cursor !== 0) {
