@@ -20,6 +20,38 @@ function readPackageVersion(): string {
 
 const APP_VERSION = readPackageVersion();
 
+const SCHEDULE_TASK_NAME = "dev-bootstrap-update";
+const DEFAULT_SCHEDULE_TIME = "09:00";
+type ScheduleFrequency = "daily" | "weekly";
+type ScheduleOptions = { frequency: ScheduleFrequency; time: string; weekday: string };
+
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+/**
+ * 解析排程要執行的指令。
+ *
+ * 排程執行時的 PATH 與互動 shell 不同，因此一律使用絕對路徑，
+ * 不能依賴 dev-bootstrap 這個指令名稱能被解析到。
+ */
+function scheduleCommandParts(): { exec: string; args: string[] } {
+  const entry = join(rootDir, "dist", "index.js");
+  return { exec: process.execPath, args: [entry, "update"] };
+}
+
+function parseScheduleTime(value: string): string {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+  if (!match) throw new Error(`Invalid time "${value}". Use HH:MM in 24-hour format, e.g. 09:00.`);
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
+
+function parseWeekday(value: string): string {
+  const normalized = value.trim().toLowerCase().slice(0, 3);
+  if (!WEEKDAYS.includes(normalized as (typeof WEEKDAYS)[number])) {
+    throw new Error(`Invalid weekday "${value}". Use one of: ${WEEKDAYS.join(", ")}.`);
+  }
+  return normalized;
+}
+
 /**
  * 設定目錄解析順序：
  * 1. DEV_BOOTSTRAP_HOME 環境變數（供 CI 或自訂路徑使用）
@@ -860,6 +892,179 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
   }
 }
 
+function quoteForShell(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+const launchAgentPath = () =>
+  join(homedir(), "Library", "LaunchAgents", `com.dev-bootstrap.update.plist`);
+
+/** 產生註冊排程所需的指令；不執行，供顯示與確認後再執行。 */
+function buildScheduleCreateCommand(options: ScheduleOptions): string {
+  const { exec, args } = scheduleCommandParts();
+  const p = platform();
+
+  if (p === "windows") {
+    // schtasks /tr 的值以一對外層引號包住，內部引號需以 \" 逸出。
+    const task = [exec, ...args].map((a) => `\\"${a}\\"`).join(" ");
+    const base = `schtasks /create /tn "${SCHEDULE_TASK_NAME}" /tr "${task}" /st ${options.time} /f`;
+    return options.frequency === "daily"
+      ? `${base} /sc daily`
+      : `${base} /sc weekly /d ${options.weekday.toUpperCase()}`;
+  }
+
+  if (p === "mac") {
+    const [hour, minute] = options.time.split(":").map(Number);
+    const calendar =
+      options.frequency === "daily"
+        ? `    <key>Hour</key><integer>${hour}</integer>\n    <key>Minute</key><integer>${minute}</integer>`
+        : `    <key>Weekday</key><integer>${WEEKDAYS.indexOf(options.weekday as (typeof WEEKDAYS)[number])}</integer>\n    <key>Hour</key><integer>${hour}</integer>\n    <key>Minute</key><integer>${minute}</integer>`;
+    const programArgs = [exec, ...args]
+      .map((a) => `    <string>${a}</string>`)
+      .join("\n");
+    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dev-bootstrap.update</string>
+  <key>ProgramArguments</key>
+  <array>
+${programArgs}
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+${calendar}
+  </dict>
+</dict>
+</plist>`;
+    const path = launchAgentPath();
+    return [
+      `mkdir -p ${quoteForShell(dirname(path))}`,
+      `cat > ${quoteForShell(path)} <<'PLIST'\n${plist}\nPLIST`,
+      `launchctl unload ${quoteForShell(path)} 2>/dev/null; launchctl load ${quoteForShell(path)}`,
+    ].join("\n");
+  }
+
+  // Linux：以 crontab 註冊，保留既有項目並移除舊的 dev-bootstrap 設定。
+  const [hour, minute] = options.time.split(":").map(Number);
+  const dayField = options.frequency === "daily" ? "*" : String(WEEKDAYS.indexOf(options.weekday as (typeof WEEKDAYS)[number]));
+  const line = `${minute} ${hour} * * ${dayField} ${quoteForShell(exec)} ${args.map(quoteForShell).join(" ")} # ${SCHEDULE_TASK_NAME}`;
+  return `(crontab -l 2>/dev/null | grep -v '# ${SCHEDULE_TASK_NAME}$'; echo ${quoteForShell(line)}) | crontab -`;
+}
+
+function buildScheduleRemoveCommand(): string {
+  const p = platform();
+  if (p === "windows") return `schtasks /delete /tn "${SCHEDULE_TASK_NAME}" /f`;
+  if (p === "mac") {
+    const path = launchAgentPath();
+    return `launchctl unload ${quoteForShell(path)} 2>/dev/null; rm -f ${quoteForShell(path)}`;
+  }
+  return `crontab -l 2>/dev/null | grep -v '# ${SCHEDULE_TASK_NAME}$' | crontab -`;
+}
+
+function buildScheduleStatusCommand(): string {
+  const p = platform();
+  if (p === "windows") return `schtasks /query /tn "${SCHEDULE_TASK_NAME}" /fo list /v`;
+  if (p === "mac") return `launchctl list | grep com.dev-bootstrap.update || echo "Not scheduled."`;
+  return `crontab -l 2>/dev/null | grep '# ${SCHEDULE_TASK_NAME}$' || echo "Not scheduled."`;
+}
+
+async function scheduleCommand(args: string[]) {
+  const sub = args[0] ?? "create";
+  const rest = args.slice(1);
+
+  /**
+   * 取得確認。非互動環境（管線、排程、CI）沒有 TTY 可讀，
+   * 直接等待輸入會永遠掛住，因此要求明確帶 --yes。
+   */
+  const confirm = async (label: string): Promise<boolean> => {
+    if (rest.includes("--yes")) return true;
+    if (!process.stdin.isTTY) {
+      console.log("Not an interactive terminal. Re-run with --yes to proceed.");
+      process.exitCode = 1;
+      return false;
+    }
+    const ok = await confirmLine(label, false);
+    disableRawInput();
+    return ok;
+  };
+
+  if (sub === "status") {
+    const command = buildScheduleStatusCommand();
+    console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+    runInteractive(command);
+    return;
+  }
+
+  if (sub === "remove") {
+    const command = buildScheduleRemoveCommand();
+    console.log("This will remove the scheduled automatic update:\n");
+    console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+    if (!(await confirm("Proceed"))) {
+      if (process.exitCode !== 1) console.log("Cancelled.");
+      return;
+    }
+    const code = runInteractive(command);
+    console.log(code === 0 ? "\nSchedule removed." : `\nFailed with exit code ${code}.`);
+    return;
+  }
+
+  if (sub !== "create") {
+    console.log(`Unknown schedule subcommand "${sub}". Use: create, status, remove.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const readOption = (name: string, fallback: string) => {
+    const index = rest.indexOf(`--${name}`);
+    return index >= 0 && rest[index + 1] ? rest[index + 1] : fallback;
+  };
+
+  let options: ScheduleOptions;
+  try {
+    const frequency = rest.includes("--daily") ? "daily" : "weekly";
+    options = {
+      frequency,
+      time: parseScheduleTime(readOption("time", DEFAULT_SCHEDULE_TIME)),
+      weekday: parseWeekday(readOption("weekday", "mon")),
+    };
+  } catch (err) {
+    console.log(String((err as Error).message));
+    process.exitCode = 1;
+    return;
+  }
+
+  const profile = loadUpdateProfile();
+  if (profile.toolIds.length === 0) {
+    console.log("No saved update profile. Run: dev-bootstrap menu, then choose 'Configure automatic update list'.");
+    process.exitCode = 1;
+    return;
+  }
+
+  const command = buildScheduleCreateCommand(options);
+  const when =
+    options.frequency === "daily"
+      ? `every day at ${options.time}`
+      : `every ${options.weekday} at ${options.time}`;
+
+  console.log(`Scheduling automatic update ${when} for ${profile.toolIds.length} tools.\n`);
+  console.log("The following will be executed:\n");
+  console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+
+  if (!(await confirm("Proceed"))) {
+    if (process.exitCode !== 1) console.log("Cancelled.");
+    return;
+  }
+
+  const code = runInteractive(command);
+  if (code === 0) {
+    console.log(`\nScheduled. Check it with: dev-bootstrap schedule status`);
+  } else {
+    console.log(`\nFailed with exit code ${code}.`);
+    process.exitCode = 1;
+  }
+}
+
 function resolveToolsByIds(tools: Tool[], ids: string[]): Tool[] {
   return tools.filter((tool) => ids.includes(tool.id));
 }
@@ -1076,6 +1281,9 @@ async function main() {
     }
     return await updateTools(selected);
   }
+  if (cmd === "schedule") {
+    return await scheduleCommand(args);
+  }
 
   console.log(`Usage:
   dev-bootstrap menu
@@ -1083,6 +1291,9 @@ async function main() {
   dev-bootstrap doctor
   dev-bootstrap install <tool-id...> [--force]
   dev-bootstrap update [<tool-id...> | --all]
+  dev-bootstrap schedule create [--daily] [--time HH:MM] [--weekday mon] [--yes]
+  dev-bootstrap schedule status
+  dev-bootstrap schedule remove [--yes]
 `);
 }
 
