@@ -155,9 +155,21 @@ function isWindows(): boolean {
   return process.platform === "win32";
 }
 
+const COMMAND_ENV = "DEV_BOOTSTRAP_COMMAND";
+
 function shellCommand(command: string) {
-  if (isWindows()) return { cmd: "cmd.exe", args: ["/d", "/s", "/c", command] };
-  return { cmd: "bash", args: ["-lc", command] };
+  // Windows 上不能直接把命令放進 args：Node 會把命令內的雙引號改寫成 \"，
+  // 導致 `powershell -Command "..."` 的內容被當成字串輸出而非執行。
+  // 改以環境變數傳遞，由 cmd.exe 自行展開，引號便能原封不動保留。
+  // cmd 是在展開前才判斷是否剝除外層引號，所以變數值不能再額外包引號。
+  if (isWindows()) {
+    return {
+      cmd: "cmd.exe",
+      args: ["/d", "/s", "/c", `%${COMMAND_ENV}%`],
+      env: { ...process.env, [COMMAND_ENV]: command },
+    };
+  }
+  return { cmd: "bash", args: ["-lc", command], env: process.env };
 }
 
 function runCapture(
@@ -170,6 +182,7 @@ function runCapture(
       encoding: "utf8",
       timeout: timeoutMs,
       windowsHide: true,
+      env: sh.env,
     });
     return {
       ok: proc.status === 0,
@@ -188,7 +201,11 @@ function runInteractive(command: string): number | null {
   const proc = spawnSync(sh.cmd, sh.args, {
     stdio: "inherit",
     windowsHide: false,
+    env: sh.env,
   });
+  if (proc.error || proc.status == null) {
+    console.log(`Process did not exit normally: signal=${proc.signal ?? "none"} error=${proc.error?.message ?? "none"}`);
+  }
   return proc.status;
 }
 
@@ -630,7 +647,7 @@ async function installMenu(
   tools: Tool[],
   mode: "install" | "update-profile" = "install",
   sharedStatus?: Map<string, ToolStatus>,
-) {
+): Promise<boolean> {
   if (!process.stdin.isTTY) {
     console.error("Interactive menu requires a TTY. Try: bun run menu");
     process.exit(1);
@@ -766,7 +783,7 @@ async function installMenu(
       }
       if (key === "\b" || key === "\x7f" || key === "\u001b") {
         restoreTerminal(false);
-        return;
+        return false;
       }
       if (key === "\r" || key === "\n") {
         restoreTerminal(true);
@@ -782,7 +799,7 @@ async function installMenu(
         } else {
           await installTools(selected, status, state.force);
         }
-        return;
+        return true;
       }
     }
   } finally {
@@ -992,7 +1009,9 @@ async function mainMenu(tools: Tool[]) {
     if (key === "\r" || key === "\n") {
       disableRawInput();
       process.stdout.write("\n");
-      if (cursor === 0) await installMenu(tools, "install", sessionStatus);
+      // 安裝有實際執行時才需要暫停，否則主選單的清畫面會蓋掉安裝結果。
+      let needsPause = true;
+      if (cursor === 0) needsPause = await installMenu(tools, "install", sessionStatus);
       else if (cursor === 1) await installMenu(tools, "update-profile", sessionStatus);
       else if (cursor === 2) {
         const profile = loadUpdateProfile();
@@ -1010,7 +1029,7 @@ async function mainMenu(tools: Tool[]) {
       else if (cursor === 5) listTools(tools, true, sessionStatus);
       else break;
 
-      if (cursor !== 0) {
+      if (needsPause) {
         console.log("\nPress Enter to return.");
         await promptLine("");
       }
