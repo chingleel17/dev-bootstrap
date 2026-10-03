@@ -1015,6 +1015,188 @@ function buildScheduleStatusCommand(): string {
   return `crontab -l 2>/dev/null | grep '# ${SCHEDULE_TASK_NAME}$' || echo "Not scheduled."`;
 }
 
+type Confirm = (label: string) => Promise<boolean>;
+type CreateScheduleResult = "scheduled" | "failed" | "cancelled" | "no-profile";
+
+const WEEKDAY_NAMES: Record<(typeof WEEKDAYS)[number], string> = {
+  sun: "Sunday",
+  mon: "Monday",
+  tue: "Tuesday",
+  wed: "Wednesday",
+  thu: "Thursday",
+  fri: "Friday",
+  sat: "Saturday",
+};
+
+function describeSchedule(options: ScheduleOptions): string {
+  return options.frequency === "daily"
+    ? `every day at ${options.time}`
+    : `every ${WEEKDAY_NAMES[options.weekday as (typeof WEEKDAYS)[number]]} at ${options.time}`;
+}
+
+function showScheduleStatus() {
+  const command = buildScheduleStatusCommand();
+  console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+  const code = runInteractive(command);
+  if (code !== 0) console.log("\nNo automatic update schedule seems to be registered yet.");
+}
+
+async function removeSchedule(confirm: Confirm) {
+  const command = buildScheduleRemoveCommand();
+  console.log("This will remove the scheduled automatic update:\n");
+  console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+  if (!(await confirm("Proceed"))) {
+    if (process.exitCode !== 1) console.log("Cancelled.");
+    return;
+  }
+  const code = runInteractive(command);
+  console.log(code === 0 ? "\nSchedule removed." : `\nFailed with exit code ${code}.`);
+}
+
+async function createSchedule(options: ScheduleOptions, confirm: Confirm): Promise<CreateScheduleResult> {
+  const profile = loadUpdateProfile();
+  if (profile.toolIds.length === 0) {
+    console.log("No saved update profile. Run: dev-bootstrap menu, then choose 'Configure automatic update list'.");
+    return "no-profile";
+  }
+
+  const command = buildScheduleCreateCommand(options);
+  console.log(`Scheduling automatic update ${describeSchedule(options)} for ${profile.toolIds.length} tools.\n`);
+  console.log("The following will be executed:\n");
+  console.log(`${ansi.dim}${command}${ansi.reset}\n`);
+
+  if (!(await confirm("Proceed"))) {
+    if (process.exitCode !== 1) console.log("Cancelled.");
+    return "cancelled";
+  }
+
+  const code = runInteractive(command);
+  if (code === 0) {
+    console.log(`\nScheduled ${describeSchedule(options)}. Check it with: dev-bootstrap schedule status`);
+    return "scheduled";
+  }
+  console.log(`\nFailed with exit code ${code}.`);
+  return "failed";
+}
+
+/** 以方向鍵從清單挑一項；Esc／Backspace／Ctrl+C 取消並回傳 null。 */
+async function chooseOne(title: string, items: string[], subtitle?: string): Promise<number | null> {
+  let cursor = 0;
+  enableRawInput();
+  while (true) {
+    process.stdout.write(ansi.clear);
+    console.log(`${ansi.bold}${title}${ansi.reset}`);
+    console.log(`${ansi.dim}Arrow keys move | Enter select | Esc back${ansi.reset}`);
+    if (subtitle) console.log(`${ansi.dim}${subtitle}${ansi.reset}`);
+    console.log("");
+    for (let i = 0; i < items.length; i++) {
+      const pointer = i === cursor ? `${ansi.cyan}>${ansi.reset}` : " ";
+      console.log(`${pointer} ${items[i]}`);
+    }
+
+    const key = await readKey();
+    if (key === "\u0003" || key === "\u001b" || key === "\b" || key === "\x7f") return null;
+    if (key === "\u001b[A") cursor = Math.max(0, cursor - 1);
+    else if (key === "\u001b[B") cursor = Math.min(items.length - 1, cursor + 1);
+    else if (key === "\r" || key === "\n") return cursor;
+  }
+}
+
+const SCHEDULE_PRESETS: ScheduleOptions[] = [
+  { frequency: "daily", time: "09:00", weekday: "mon" },
+  { frequency: "weekly", time: "09:00", weekday: "mon" },
+  { frequency: "weekly", time: "18:00", weekday: "fri" },
+  { frequency: "daily", time: "12:30", weekday: "mon" },
+];
+
+/** 讓使用者自訂頻率、星期與時間；中途取消回傳 null。 */
+async function promptCustomSchedule(): Promise<ScheduleOptions | null> {
+  const frequencyIndex = await chooseOne("Custom schedule: how often?", ["Every day", "Every week"]);
+  if (frequencyIndex === null) return null;
+  const frequency: ScheduleFrequency = frequencyIndex === 0 ? "daily" : "weekly";
+
+  let weekday = "mon";
+  if (frequency === "weekly") {
+    // 週一排最前面，符合多數人的習慣。
+    const order = [...WEEKDAYS.slice(1), WEEKDAYS[0]];
+    const dayIndex = await chooseOne(
+      "Custom schedule: which day?",
+      order.map((d) => WEEKDAY_NAMES[d]),
+    );
+    if (dayIndex === null) return null;
+    weekday = order[dayIndex];
+  }
+
+  process.stdout.write(ansi.clear);
+  while (true) {
+    const answer = await promptLine(`Time in 24-hour HH:MM [${DEFAULT_SCHEDULE_TIME}], type q to cancel`);
+    if (answer.toLowerCase() === "q") return null;
+    try {
+      return { frequency, weekday, time: parseScheduleTime(answer || DEFAULT_SCHEDULE_TIME) };
+    } catch (err) {
+      console.log(`${ansi.yellow}${(err as Error).message}${ansi.reset}`);
+    }
+  }
+}
+
+/** 互動式排程選單。回傳是否有輸出需要讓使用者看過再回主選單。 */
+async function scheduleMenu(): Promise<boolean> {
+  const action = await chooseOne("Automatic update schedule", [
+    "Create or change schedule",
+    "Show current schedule",
+    "Remove schedule",
+    "Back",
+  ]);
+  if (action === null || action === 3) return false;
+
+  // 子選單結束時 stdin 仍為 raw 模式，需先還原才能讓子程序與輸入提示正常運作。
+  const confirm: Confirm = async (label) => {
+    const ok = await confirmLine(label, true);
+    disableRawInput();
+    return ok;
+  };
+
+  if (action === 1) {
+    disableRawInput();
+    process.stdout.write(ansi.clear);
+    showScheduleStatus();
+    return true;
+  }
+
+  if (action === 2) {
+    disableRawInput();
+    process.stdout.write(ansi.clear);
+    await removeSchedule(confirm);
+    return true;
+  }
+
+  const profile = loadUpdateProfile();
+  if (profile.toolIds.length === 0) {
+    disableRawInput();
+    process.stdout.write(ansi.clear);
+    console.log("No saved update profile. Choose 'Configure automatic update list' first.");
+    return true;
+  }
+
+  const presetLabels = SCHEDULE_PRESETS.map((p) => describeSchedule(p).replace(/^every/, "Every"));
+  const picked = await chooseOne(
+    "When should the automatic update run?",
+    [...presetLabels, "Custom..."],
+    `${profile.toolIds.length} tools in the saved update list`,
+  );
+  if (picked === null) return false;
+
+  const options = picked < SCHEDULE_PRESETS.length ? SCHEDULE_PRESETS[picked] : await promptCustomSchedule();
+  disableRawInput();
+  process.stdout.write(ansi.clear);
+  if (!options) {
+    console.log("Cancelled.");
+    return true;
+  }
+  await createSchedule(options, confirm);
+  return true;
+}
+
 async function scheduleCommand(args: string[]) {
   const sub = args[0] ?? "create";
   const rest = args.slice(1);
@@ -1036,22 +1218,12 @@ async function scheduleCommand(args: string[]) {
   };
 
   if (sub === "status") {
-    const command = buildScheduleStatusCommand();
-    console.log(`${ansi.dim}${command}${ansi.reset}\n`);
-    runInteractive(command);
+    showScheduleStatus();
     return;
   }
 
   if (sub === "remove") {
-    const command = buildScheduleRemoveCommand();
-    console.log("This will remove the scheduled automatic update:\n");
-    console.log(`${ansi.dim}${command}${ansi.reset}\n`);
-    if (!(await confirm("Proceed"))) {
-      if (process.exitCode !== 1) console.log("Cancelled.");
-      return;
-    }
-    const code = runInteractive(command);
-    console.log(code === 0 ? "\nSchedule removed." : `\nFailed with exit code ${code}.`);
+    await removeSchedule(confirm);
     return;
   }
 
@@ -1080,35 +1252,8 @@ async function scheduleCommand(args: string[]) {
     return;
   }
 
-  const profile = loadUpdateProfile();
-  if (profile.toolIds.length === 0) {
-    console.log("No saved update profile. Run: dev-bootstrap menu, then choose 'Configure automatic update list'.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const command = buildScheduleCreateCommand(options);
-  const when =
-    options.frequency === "daily"
-      ? `every day at ${options.time}`
-      : `every ${options.weekday} at ${options.time}`;
-
-  console.log(`Scheduling automatic update ${when} for ${profile.toolIds.length} tools.\n`);
-  console.log("The following will be executed:\n");
-  console.log(`${ansi.dim}${command}${ansi.reset}\n`);
-
-  if (!(await confirm("Proceed"))) {
-    if (process.exitCode !== 1) console.log("Cancelled.");
-    return;
-  }
-
-  const code = runInteractive(command);
-  if (code === 0) {
-    console.log(`\nScheduled. Check it with: dev-bootstrap schedule status`);
-  } else {
-    console.log(`\nFailed with exit code ${code}.`);
-    process.exitCode = 1;
-  }
+  const result = await createSchedule(options, confirm);
+  if (result === "failed" || result === "no-profile") process.exitCode = 1;
 }
 
 function resolveToolsByIds(tools: Tool[], ids: string[]): Tool[] {
@@ -1225,6 +1370,7 @@ async function mainMenu(tools: Tool[]) {
     "Install tools",
     "Configure automatic update list",
     "Update saved tools now",
+    "Schedule automatic updates",
     "Doctor",
     "List tools",
     "List tools with versions",
@@ -1283,9 +1429,10 @@ async function mainMenu(tools: Tool[]) {
           await updateTools(selected, sessionStatus);
         }
       }
-      else if (cursor === 3) doctor(tools, sessionStatus);
-      else if (cursor === 4) listTools(tools, false);
-      else if (cursor === 5) listTools(tools, true, sessionStatus);
+      else if (cursor === 3) needsPause = await scheduleMenu();
+      else if (cursor === 4) doctor(tools, sessionStatus);
+      else if (cursor === 5) listTools(tools, false);
+      else if (cursor === 6) listTools(tools, true, sessionStatus);
       else break;
 
       if (needsPause) {
