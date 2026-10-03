@@ -95,6 +95,9 @@ dev-bootstrap install git gh node --force            # 強制重裝（含已安�
 dev-bootstrap update                                # 更新已儲存的清單
 dev-bootstrap update claude codex opencode          # 更新指定工具
 dev-bootstrap update --all                          # 更新全部工具
+dev-bootstrap schedule create --daily --time 09:00  # 註冊定時自動更新
+dev-bootstrap schedule status                       # 查詢目前排程
+dev-bootstrap schedule remove                       # 移除排程
 ```
 
 ## 選單操作
@@ -143,7 +146,26 @@ Q              離開
 dev-bootstrap update
 ```
 
-這個指令是非互動的，適合掛在 Windows Task Scheduler 或 cron。
+這個指令是非互動的，適合交給系統排程定時執行。
+
+### 定時執行
+
+`schedule` 會把上面的更新指令註冊到系統排程，不需要手動開排程管理器：
+
+```bash
+dev-bootstrap schedule create                          # 每週一 09:00
+dev-bootstrap schedule create --daily                  # 每天 09:00
+dev-bootstrap schedule create --daily --time 14:30     # 每天 14:30
+dev-bootstrap schedule create --weekday fri --time 18:00   # 每週五 18:00
+dev-bootstrap schedule status                          # 查詢目前排程
+dev-bootstrap schedule remove                          # 移除排程
+```
+
+各平台使用的機制：Windows 為工作排程器（`schtasks`）、macOS 為 launchd（`~/Library/LaunchAgents`）、Linux 為 cron（`crontab`）。
+
+寫入系統排程前會先印出完整指令並要求確認，確認後才執行。非互動環境（腳本、CI）請加 `--yes`。
+
+需要先設定好自動更新清單，否則 `schedule create` 會提示你先去設定。
 
 ### 更新策略
 
