@@ -1,6 +1,6 @@
 {
   "name": "dev-bootstrap",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cross-platform development environment bootstrapper: install and keep CLI tools up to date via winget, brew, npm and bun.",
   "type": "module",
   "license": "MIT",
