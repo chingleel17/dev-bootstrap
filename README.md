@@ -21,6 +21,7 @@
 - **掃描結果沿用** — 同一次執行期間只掃描一次，進出選單不會重複詢問；按 `V` 可隨時重新掃描
 - **自動更新清單** — 儲存一份常用工具清單，之後一個指令全部更新，可掛 Task Scheduler 或 cron
 - **診斷模式** — `doctor` 一次列出所有工具的安裝狀態與版本
+- **可自訂工具** — 在使用者目錄放 YAML 即可新增、調整或隱藏工具，升級套件不會被覆蓋
 
 ## 安裝
 
@@ -138,6 +139,62 @@ Q              離開
 
 用 `dev-bootstrap list` 看完整清單與 tool id。
 
+## 自訂工具
+
+不需要 clone 專案。在設定目錄下建立 `tools/` 資料夾，放入任意 `.yaml` 檔即可：
+
+```
+~/.dev-bootstrap/tools/my-tools.yaml
+```
+
+自訂定義會**疊加**在內建定義之上，所以升級套件時你的設定不會被覆蓋，也不會錯過內建工具的更新。
+
+**新增工具** — 用內建沒有的 id：
+
+```yaml
+- id: httpie
+  name: HTTPie
+  category: Utilities
+  description: Human-friendly HTTP client
+  install:
+    winget: "HTTPie.HTTPie"
+    brew: "httpie"
+    apt: "httpie"
+  verify:
+    - command: "http --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+```
+
+**調整內建工具** — 用相同的 id，只寫要改的欄位，其餘沿用內建：
+
+```yaml
+- id: ripgrep
+  description: 我們團隊的搜尋工具
+```
+
+**隱藏不需要的工具** — 標記 `remove`：
+
+```yaml
+- id: zip
+  remove: true
+```
+
+執行 `dev-bootstrap doctor` 可以看到目前讀取了哪些來源與自訂筆數。YAML 格式有誤時會跳過該檔並指出錯誤位置，不影響其他工具。
+
+### 欄位說明
+
+| 欄位 | 必填 | 說明 |
+|---|---|---|
+| `id` | 是 | 唯一識別，指令中使用 |
+| `name` | 是 | 顯示名稱 |
+| `category` | 是 | 分類，可自訂新分類 |
+| `description` | 否 | 選單中的說明 |
+| `homepage` | 否 | 官方網站 |
+| `install` | 否 | 各平台安裝方式：`winget`／`brew`／`apt`／`npm`／`bun`／`script`／`powershell` |
+| `update` | 否 | `command` 自訂更新指令、`disabled` 停用更新、`note` 說明 |
+| `verify` | 否 | 版本偵測：`command` 與選用的 `regex`（第一個擷取群組為版本號） |
+| `remove` | 否 | 標記 `true` 可隱藏同 id 的內建工具 |
+
 ## 自動更新
 
 從選單選 **Configure automatic update list**，勾選要保持最新的工具，按 Enter 儲存。之後執行：
@@ -186,6 +243,11 @@ dev-bootstrap schedule remove                          # 移除排程
 1. `DEV_BOOTSTRAP_HOME` 環境變數（若已設定）
 2. 當前目錄的 `./.dev-bootstrap/`（若已存在，可作為專案層級覆寫）
 3. `~/.dev-bootstrap/`（預設）
+
+此目錄存放：
+
+- `update-profile.json` — 自動更新清單
+- `tools/*.yaml` — 自訂工具定義（見「自訂工具」）
 
 ## 從原始碼開發
 

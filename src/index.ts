@@ -73,6 +73,8 @@ function resolveConfigDir(): string {
 
 const configDir = resolveConfigDir();
 const updateProfilePath = join(configDir, "update-profile.json");
+/** 使用者自訂工具定義；疊加在套件內建的 tools/ 之上。 */
+const userToolsDir = join(configDir, "tools");
 const VERIFY_TIMEOUT_MS = 10000;
 const WINGET_NO_UPGRADE_EXIT_CODE = 43;
 
@@ -101,6 +103,8 @@ type Tool = {
   install?: InstallSpec;
   update?: UpdateSpec;
   verify?: VerifySpec[];
+  /** 僅用於使用者自訂設定：標記 true 可隱藏同 id 的內建工具。 */
+  remove?: boolean;
 };
 type ToolStatusKind = "unchecked" | "installed" | "missing" | "timeout";
 type ToolStatus = {
@@ -246,15 +250,57 @@ function isWingetUpToDateResult(command: string, code: number | null): boolean {
   return code === WINGET_NO_UPGRADE_EXIT_CODE;
 }
 
-function loadTools(): Tool[] {
-  if (!existsSync(toolsDir)) throw new Error(`Missing tools directory: ${toolsDir}`);
-  const files = readdirSync(toolsDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+function readToolsFromDir(dir: string): Tool[] {
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
+    .sort();
   const tools: Tool[] = [];
   for (const file of files) {
-    const parsed = YAML.parse(readFileSync(join(toolsDir, file), "utf8"));
+    const path = join(dir, file);
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(readFileSync(path, "utf8"));
+    } catch (err) {
+      console.error(`Skipping ${path}: ${(err as Error).message}`);
+      continue;
+    }
     if (Array.isArray(parsed)) tools.push(...(parsed as Tool[]));
-    else tools.push(parsed as Tool);
+    else if (parsed) tools.push(parsed as Tool);
   }
+  return tools;
+}
+
+/**
+ * 載入工具定義，使用者自訂的設定疊加在內建定義之上。
+ *
+ * - 內建：套件內的 tools/，隨版本更新，不應手動修改
+ * - 自訂：<設定目錄>/tools/*.yaml，同 id 覆寫、新 id 新增
+ * - 以 remove: true 標記可隱藏不需要的內建工具
+ *
+ * 採疊加而非複製，使用者既能自訂，又不會失去內建定義的後續更新。
+ */
+function loadTools(): Tool[] {
+  if (!existsSync(toolsDir)) throw new Error(`Missing tools directory: ${toolsDir}`);
+
+  const merged = new Map<string, Tool>();
+  for (const tool of readToolsFromDir(toolsDir)) merged.set(tool.id, tool);
+
+  for (const tool of readToolsFromDir(userToolsDir)) {
+    if (!tool?.id) {
+      console.error(`Skipping a user-defined tool without an id in ${userToolsDir}`);
+      continue;
+    }
+    if (tool.remove) {
+      merged.delete(tool.id);
+      continue;
+    }
+    const base = merged.get(tool.id);
+    // 淺層合併：未指定的欄位沿用內建定義，install/update/verify 整組覆寫。
+    merged.set(tool.id, base ? { ...base, ...tool } : tool);
+  }
+
+  const tools = [...merged.values()].filter((tool) => tool.id && tool.name && tool.category);
   return tools.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 }
 
@@ -1164,6 +1210,14 @@ function doctor(tools: Tool[], sharedStatus?: Map<string, ToolStatus>) {
   }
 
   console.log(`\n${installed}/${tools.length} tools detected.`);
+
+  const userTools = readToolsFromDir(userToolsDir);
+  console.log(`\n${ansi.dim}Built-in definitions: ${toolsDir}${ansi.reset}`);
+  console.log(
+    userTools.length > 0
+      ? `${ansi.dim}Custom definitions:   ${userToolsDir} (${userTools.length} entries)${ansi.reset}`
+      : `${ansi.dim}Custom definitions:   ${userToolsDir} (none yet)${ansi.reset}`,
+  );
 }
 
 async function mainMenu(tools: Tool[]) {
