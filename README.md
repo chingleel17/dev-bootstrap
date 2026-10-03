@@ -58,6 +58,7 @@ npx dev-bootstrap menu
 | Install tools | 勾選並安裝工具 |
 | Configure automatic update list | 設定自動更新清單並儲存 |
 | Update saved tools now | 立即更新已儲存的清單 |
+| Schedule automatic updates | 互動式建立、查看或移除定時更新排程 |
 | Doctor | 檢查所有工具的安裝狀態與版本 |
 | List tools | 列出所有可用工具 |
 | List tools with versions | 列出工具並顯示已安裝版本 |
@@ -207,7 +208,9 @@ dev-bootstrap update
 
 ### 定時執行
 
-`schedule` 會把上面的更新指令註冊到系統排程，不需要手動開排程管理器：
+最簡單的方式是從選單選 **Schedule automatic updates**：用方向鍵挑常用時段（每天 09:00、每週一 09:00、每週五 18:00、每天 12:30），或選 **Custom...** 自訂頻率、星期與時間，不用記指令。
+
+也可以用指令，`schedule` 會把上面的更新指令註冊到系統排程，不需要手動開排程管理器：
 
 ```bash
 dev-bootstrap schedule create                          # 每週一 09:00
