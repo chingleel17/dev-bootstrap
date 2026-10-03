@@ -1385,7 +1385,7 @@ async function mainMenu(tools: Tool[]) {
   while (true) {
     const scanned = [...sessionStatus.values()].filter((s) => s.kind !== "unchecked").length;
     process.stdout.write(ansi.clear);
-    console.log(`${ansi.bold}dev-bootstrap${ansi.reset}`);
+    console.log(`${ansi.bold}dev-bootstrap${ansi.reset}${APP_VERSION ? ` ${ansi.dim}v${APP_VERSION}${ansi.reset}` : ""}`);
     console.log(`${ansi.dim}Arrow keys move | Enter select | Q quit${ansi.reset}\n`);
     console.log(`${ansi.magenta}Platform:${ansi.reset} ${platform()}`);
     console.log(
@@ -1446,9 +1446,35 @@ async function mainMenu(tools: Tool[]) {
   restoreTerminal(false);
 }
 
+function printUsage() {
+  console.log(`Usage:
+  dev-bootstrap menu
+  dev-bootstrap list [--versions]
+  dev-bootstrap doctor
+  dev-bootstrap install <tool-id...> [--force]
+  dev-bootstrap update [<tool-id...> | --all]
+  dev-bootstrap schedule create [--daily] [--time HH:MM] [--weekday mon] [--yes]
+  dev-bootstrap schedule status
+  dev-bootstrap schedule remove [--yes]
+  dev-bootstrap --version
+  dev-bootstrap --help
+`);
+}
+
 async function main() {
-  const tools = loadTools();
   const [cmd, ...args] = process.argv.slice(2);
+
+  // 版本與說明不需要載入工具定義，先處理以保持輕量。
+  if (cmd === "-v" || cmd === "-V" || cmd === "--version" || cmd === "version") {
+    console.log(APP_VERSION || "unknown");
+    return;
+  }
+  if (cmd === "-h" || cmd === "--help" || cmd === "help") {
+    printUsage();
+    return;
+  }
+
+  const tools = loadTools();
 
   if (!cmd || cmd === "menu") {
     return await mainMenu(tools);
@@ -1486,16 +1512,7 @@ async function main() {
     return await scheduleCommand(args);
   }
 
-  console.log(`Usage:
-  dev-bootstrap menu
-  dev-bootstrap list [--versions]
-  dev-bootstrap doctor
-  dev-bootstrap install <tool-id...> [--force]
-  dev-bootstrap update [<tool-id...> | --all]
-  dev-bootstrap schedule create [--daily] [--time HH:MM] [--weekday mon] [--yes]
-  dev-bootstrap schedule status
-  dev-bootstrap schedule remove [--yes]
-`);
+  printUsage();
 }
 
 // 保險機制：任何離開路徑都必須還原終端，否則使用者的終端會卡在

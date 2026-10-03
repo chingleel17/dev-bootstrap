@@ -100,6 +100,8 @@ dev-bootstrap update --all                          # 更新全部工具
 dev-bootstrap schedule create --daily --time 09:00  # 註冊定時自動更新
 dev-bootstrap schedule status                       # 查詢目前排程
 dev-bootstrap schedule remove                       # 移除排程
+dev-bootstrap --version                              # 顯示版本（也可用 -v）
+dev-bootstrap --help                                 # 顯示用法（也可用 -h）
 ```
 
 ## 選單操作
