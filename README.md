@@ -104,6 +104,8 @@ dev-bootstrap --version                              # 顯示版本（也可用 
 dev-bootstrap --help                                 # 顯示用法（也可用 -h）
 ```
 
+同時選取 Bun 與使用 Bun 安裝的工具時，會先安裝 Bun。若 Bun 不可用，互動式安裝會詢問是否先安裝 Bun、改用 npm，或略過；選擇 npm／略過時可套用至本次剩餘的 Bun 套件。安裝 Bun 後會更新目前程序的 PATH，找到 Bun 後接續安裝；若仍找不到則再次詢問。非互動模式缺少 Bun 時會略過相關工具。
+
 ## 選單操作
 
 ```text
@@ -132,7 +134,7 @@ Q              離開
 
 **Git** — Git、Git LFS、GitHub CLI
 
-**Shell** — Oh My Posh、zoxide、fzf、ripgrep、fd、bat、eza
+**Shell** — Oh My Posh（Windows／Linux）或 Oh My Zsh（macOS）、zoxide、fzf、ripgrep、fd、bat、eza
 
 **Network** — ngrok、cloudflared、OpenSSH Client、OpenSSL
 
@@ -191,11 +193,12 @@ Q              離開
 | `id` | 是 | 唯一識別，指令中使用 |
 | `name` | 是 | 顯示名稱 |
 | `category` | 是 | 分類，可自訂新分類 |
+| `platforms` | 否 | 顯示及安裝的平台清單：`windows`／`mac`／`linux` |
 | `description` | 否 | 選單中的說明 |
 | `homepage` | 否 | 官方網站 |
 | `install` | 否 | 各平台安裝方式：`winget`／`brew`／`apt`／`npm`／`bun`／`script`／`powershell` |
 | `update` | 否 | `command` 自訂更新指令、`disabled` 停用更新、`note` 說明 |
-| `verify` | 否 | 版本偵測：`command` 與選用的 `regex`（第一個擷取群組為版本號） |
+| `verify` | 否 | 驗證指令清單：`command`、選用的 `regex`（第一個擷取群組為版本號）；`requireSuccess: true` 表示不可只以指令存在判定已安裝 |
 | `remove` | 否 | 標記 `true` 可隱藏同 id 的內建工具 |
 
 ## 自動更新
