@@ -84,8 +84,10 @@
   homepage: https://rustup.rs
   install:
     winget: "Rustlang.Rustup"
-    brew: "rustup"
+    # 不用 brew：Homebrew 的 rustup 是 keg-only 且不含工具鏈，裝完找不到 rustc。
     script: "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+  update:
+    command: "rustup update"
   verify:
     - command: "rustc --version"
       regex: "rustc ([0-9]+(?:\\.[0-9]+)+)"

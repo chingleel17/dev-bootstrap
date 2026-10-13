@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -397,7 +397,54 @@ function refreshBunPath() {
   for (const dir of candidates) {
     if (existsSync(join(dir, isWindows() ? "bun.exe" : "bun"))) paths.push(dir);
   }
+  // 以 Homebrew 等方式安裝 Bun 時，bun 本體不在 ~/.bun/bin，但 bun add -g 的指令仍會放在那裡。
+  const globalBin = bunGlobalBinDir();
+  if (globalBin && existsSync(globalBin)) paths.push(globalBin);
   process.env[pathKey] = [...new Set(paths.filter(Boolean))].join(separator);
+}
+
+/** rustup 安裝腳本只會修改 shell 設定檔，目前程序需自行加入 cargo bin 才驗證得到。 */
+function refreshCargoPath() {
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  const separator = isWindows() ? ";" : ":";
+  const cargoBin = join(process.env.CARGO_HOME ?? join(homedir(), ".cargo"), "bin");
+  if (!existsSync(cargoBin)) return;
+  const paths = (process.env[pathKey] ?? "").split(separator);
+  process.env[pathKey] = [...new Set([cargoBin, ...paths].filter(Boolean))].join(separator);
+}
+
+/** bun add -g 安裝的指令所在目錄。 */
+function bunGlobalBinDir(): string {
+  const fallback = join(process.env.BUN_INSTALL ?? join(homedir(), ".bun"), "bin");
+  const result = spawnSync("bun", ["pm", "bin", "-g"], { encoding: "utf8", windowsHide: true, timeout: 5000 });
+  const dir = result.status === 0 ? (result.stdout ?? "").trim().split(/\r?\n/)[0] : "";
+  return dir || fallback;
+}
+
+/**
+ * Homebrew 版 Bun 不會像官方安裝腳本一樣把全域 bin 寫進 shell 設定檔，
+ * 導致 bun add -g 裝好的指令在新終端機中找不到，因此在此補上。
+ */
+function persistBunGlobalBin() {
+  if (isWindows()) return;
+  const dir = bunGlobalBinDir();
+  const shell = process.env.SHELL ?? "";
+  const rcFile = shell.endsWith("zsh")
+    ? join(homedir(), ".zshrc")
+    : shell.endsWith("bash")
+      ? join(homedir(), platform() === "mac" ? ".bash_profile" : ".bashrc")
+      : null;
+  const home = homedir();
+  const shownDir = dir.startsWith(`${home}/`) ? `$HOME${dir.slice(home.length)}` : dir;
+  const line = `export PATH="${shownDir}:$PATH"`;
+  if (!rcFile) {
+    console.log(`Add Bun global bin to your PATH manually: ${line}`);
+    return;
+  }
+  const content = existsSync(rcFile) ? readFileSync(rcFile, "utf8") : "";
+  if (content.includes(dir) || content.includes(shownDir)) return;
+  appendFileSync(rcFile, `${content && !content.endsWith("\n") ? "\n" : ""}\n# bun global bin (added by dev-bootstrap)\n${line}\n`, "utf8");
+  console.log(`Added ${shownDir} to PATH in ${rcFile}. Open a new terminal or run: source ${rcFile}`);
 }
 
 function detectStatus(tool: Tool): ToolStatus {
@@ -976,6 +1023,7 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
             console.log(`\n==> Installing ${bunTool.name}`);
             console.log(`$ ${bunCommand}`);
             const code = runInteractive(bunCommand);
+            if (code === 0) persistBunGlobalBin();
             refreshBunPath();
             const after = detectStatus(bunTool);
             status.set(bunTool.id, after);
@@ -1009,6 +1057,11 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
     const code = runInteractive(command);
     if (tool.id === "bun") bunInstallAttempted = true;
     if (tool.id === "bun" && code === 0) refreshBunPath();
+    if (tool.id === "rust" && code === 0) refreshCargoPath();
+    if (code === 0 && (tool.id === "bun" || command.startsWith("bun add -g "))) {
+      persistBunGlobalBin();
+      refreshBunPath();
+    }
     const after = detectStatus(tool);
     status.set(tool.id, after);
 

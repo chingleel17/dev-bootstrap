@@ -106,6 +106,24 @@ dev-bootstrap --help                                 # 顯示用法（也可用 
 
 同時選取 Bun 與使用 Bun 安裝的工具時，會先安裝 Bun。若 Bun 不可用，互動式安裝會詢問是否先安裝 Bun、改用 npm，或略過；選擇 npm／略過時可套用至本次剩餘的 Bun 套件。安裝 Bun 後會更新目前程序的 PATH，找到 Bun 後接續安裝；若仍找不到則再次詢問。非互動模式缺少 Bun 時會略過相關工具。
 
+在 macOS／Linux 上，`bun add -g` 安裝的指令會放在 Bun 的全域目錄（預設 `~/.bun/bin`）。Bun 官方安裝腳本會把這個目錄加進 PATH，但 Homebrew 版的 Bun 不會，因此安裝 Bun 或 Bun 套件成功後，dev-bootstrap 會在 shell 設定檔末尾加上一行 `export PATH="$HOME/.bun/bin:$PATH"`（zsh 為 `~/.zshrc`；bash 在 macOS 為 `~/.bash_profile`、Linux 為 `~/.bashrc`；已存在則不重複加入）。其他 shell 會顯示需要手動加入的指令。
+
+### 安裝後找不到指令
+
+若出現 `command not found`（例如 `tauri`、`opencode`），或安裝結尾顯示 `verify did not detect it`：
+
+1. 開新的終端機，或執行 `source ~/.zshrc`（bash 改用對應的設定檔）。
+2. 仍找不到時，執行 `bun pm bin -g` 查看全域目錄，並確認該目錄已加入 PATH：
+
+   ```sh
+   echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc
+   source ~/.zshrc
+   ```
+
+3. 以 Homebrew 安裝的 Bun 請用 `brew upgrade bun`（或 dev-bootstrap 的更新功能）升級，不要使用 `bun upgrade`。
+
+Rust 在 macOS／Linux 一律使用官方 rustup 腳本安裝（不使用 Homebrew 的 `rustup`：它是 keg-only 且不含工具鏈，安裝後找不到 `rustc`），更新使用 `rustup update`。若先前已用 Homebrew 安裝 rustup，請先 `brew uninstall rustup` 再重新安裝。
+
 ## 選單操作
 
 ```text
