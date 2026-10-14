@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -93,7 +93,7 @@ type UpdateSpec = {
   note?: string;
   command?: string;
 };
-type VerifySpec = { command: string; regex?: string };
+type VerifySpec = { command: string; regex?: string; requireSuccess?: boolean };
 type Tool = {
   id: string;
   name: string;
@@ -103,6 +103,8 @@ type Tool = {
   install?: InstallSpec;
   update?: UpdateSpec;
   verify?: VerifySpec[];
+  /** 僅在指定平台顯示及安裝此工具。 */
+  platforms?: Platform[];
   /** 僅用於使用者自訂設定：標記 true 可隱藏同 id 的內建工具。 */
   remove?: boolean;
 };
@@ -300,7 +302,9 @@ function loadTools(): Tool[] {
     merged.set(tool.id, base ? { ...base, ...tool } : tool);
   }
 
-  const tools = [...merged.values()].filter((tool) => tool.id && tool.name && tool.category);
+  const tools = [...merged.values()].filter((tool) =>
+    tool.id && tool.name && tool.category && (!tool.platforms || tool.platforms.includes(platform()))
+  );
   return tools.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
 }
 
@@ -372,6 +376,77 @@ function commandExists(command: string): boolean {
   return result.ok && !!result.stdout.trim();
 }
 
+/** 安裝程式更新使用者 PATH 後，讓目前程序的後續子程序也能找到 Bun。 */
+function refreshBunPath() {
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  const separator = isWindows() ? ";" : ":";
+  const paths = (process.env[pathKey] ?? "").split(separator);
+
+  if (isWindows()) {
+    const registered = spawnSync("powershell.exe", [
+      "-NoProfile", "-Command",
+      "[Environment]::ExpandEnvironmentVariables(([Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')))",
+    ], { encoding: "utf8", windowsHide: true });
+    if (registered.status === 0) paths.push(...registered.stdout.trim().split(separator));
+  }
+
+  const candidates = [
+    join(process.env.BUN_INSTALL ?? join(homedir(), ".bun"), "bin"),
+    ...(isWindows() && process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, "Microsoft", "WinGet", "Links")] : []),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, isWindows() ? "bun.exe" : "bun"))) paths.push(dir);
+  }
+  // 以 Homebrew 等方式安裝 Bun 時，bun 本體不在 ~/.bun/bin，但 bun add -g 的指令仍會放在那裡。
+  const globalBin = bunGlobalBinDir();
+  if (globalBin && existsSync(globalBin)) paths.push(globalBin);
+  process.env[pathKey] = [...new Set(paths.filter(Boolean))].join(separator);
+}
+
+/** rustup 安裝腳本只會修改 shell 設定檔，目前程序需自行加入 cargo bin 才驗證得到。 */
+function refreshCargoPath() {
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
+  const separator = isWindows() ? ";" : ":";
+  const cargoBin = join(process.env.CARGO_HOME ?? join(homedir(), ".cargo"), "bin");
+  if (!existsSync(cargoBin)) return;
+  const paths = (process.env[pathKey] ?? "").split(separator);
+  process.env[pathKey] = [...new Set([cargoBin, ...paths].filter(Boolean))].join(separator);
+}
+
+/** bun add -g 安裝的指令所在目錄。 */
+function bunGlobalBinDir(): string {
+  const fallback = join(process.env.BUN_INSTALL ?? join(homedir(), ".bun"), "bin");
+  const result = spawnSync("bun", ["pm", "bin", "-g"], { encoding: "utf8", windowsHide: true, timeout: 5000 });
+  const dir = result.status === 0 ? (result.stdout ?? "").trim().split(/\r?\n/)[0] : "";
+  return dir || fallback;
+}
+
+/**
+ * Homebrew 版 Bun 不會像官方安裝腳本一樣把全域 bin 寫進 shell 設定檔，
+ * 導致 bun add -g 裝好的指令在新終端機中找不到，因此在此補上。
+ */
+function persistBunGlobalBin() {
+  if (isWindows()) return;
+  const dir = bunGlobalBinDir();
+  const shell = process.env.SHELL ?? "";
+  const rcFile = shell.endsWith("zsh")
+    ? join(homedir(), ".zshrc")
+    : shell.endsWith("bash")
+      ? join(homedir(), platform() === "mac" ? ".bash_profile" : ".bashrc")
+      : null;
+  const home = homedir();
+  const shownDir = dir.startsWith(`${home}/`) ? `$HOME${dir.slice(home.length)}` : dir;
+  const line = `export PATH="${shownDir}:$PATH"`;
+  if (!rcFile) {
+    console.log(`Add Bun global bin to your PATH manually: ${line}`);
+    return;
+  }
+  const content = existsSync(rcFile) ? readFileSync(rcFile, "utf8") : "";
+  if (content.includes(dir) || content.includes(shownDir)) return;
+  appendFileSync(rcFile, `${content && !content.endsWith("\n") ? "\n" : ""}\n# bun global bin (added by dev-bootstrap)\n${line}\n`, "utf8");
+  console.log(`Added ${shownDir} to PATH in ${rcFile}. Open a new terminal or run: source ${rcFile}`);
+}
+
 function detectStatus(tool: Tool): ToolStatus {
   if (!tool.verify || tool.verify.length === 0) {
     return { kind: "missing", installed: false, version: "no verify" };
@@ -399,7 +474,7 @@ function detectStatus(tool: Tool): ToolStatus {
     if (result.ok) {
       return { kind: "installed", installed: true, version: "installed" };
     }
-    if (commandExists(v.command)) {
+    if (!v.requireSuccess && commandExists(v.command)) {
       return {
         kind: "installed",
         installed: true,
@@ -875,7 +950,7 @@ async function installMenu(
             console.log("Update profile was not changed.");
           }
         } else {
-          await installTools(selected, status, state.force);
+          await installTools(selected, status, state.force, tools);
         }
         return true;
       }
@@ -886,7 +961,7 @@ async function installMenu(
   }
 }
 
-async function installTools(tools: Tool[], status = withUncheckedStatus(tools), force = false) {
+async function installTools(tools: Tool[], status = withUncheckedStatus(tools), force = false, availableTools = tools) {
   if (tools.length === 0) {
     console.log("No tools selected.");
     return;
@@ -908,23 +983,85 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
     if (reinstall) force = true;
   }
 
-  for (const tool of tools) {
+  // Bun 必須在任何使用 bun add -g 的工具之前安裝，即使原清單按分類排序。
+  const ordered = [...tools].sort((a, b) => Number(b.id === "bun") - Number(a.id === "bun"));
+  let missingBunChoice: "npm" | "skip" | null = null;
+  let bunInstallAttempted = false;
+  for (const tool of ordered) {
     const currentStatus = status.get(tool.id);
     if (currentStatus?.installed && !force) {
       console.log(`\nSKIP ${tool.name} (${currentStatus.version})`);
       continue;
     }
 
-    const command = chooseInstallCommand(tool);
+    let command = chooseInstallCommand(tool);
     if (!command) {
       console.log(`\nNO INSTALLER ${tool.name} on ${platform()}`);
       if (tool.homepage) console.log(`Homepage: ${tool.homepage}`);
       continue;
     }
 
+    if (tool.install?.bun && command.startsWith("bun add -g ")) {
+      refreshBunPath();
+      if (!commandExists("bun")) {
+        if (!process.stdin.isTTY) {
+          console.log(`\nSKIP ${tool.name}: Bun is unavailable; use an interactive terminal to choose npm or install Bun.`);
+          continue;
+        }
+        let choice: "npm" | "skip" | null = missingBunChoice;
+        while (!choice && !commandExists("bun")) {
+          console.log(`\nBun is unavailable for ${tool.name}.`);
+          const bunTool = availableTools.find((item) => item.id === "bun");
+          const canInstallBun = !bunInstallAttempted && !!bunTool && !!chooseInstallCommand(bunTool);
+          const npmAvailable = commandExists("npm");
+          const options = [canInstallBun ? "I: install Bun" : "", npmAvailable ? "N: use npm" : "", "S: skip"].filter(Boolean);
+          console.log(options.join(" | "));
+          const answer = (await promptLine("Choose an option")).toLowerCase();
+          if (answer === "i" && canInstallBun && bunTool) {
+            bunInstallAttempted = true;
+            const bunCommand = chooseInstallCommand(bunTool)!;
+            console.log(`\n==> Installing ${bunTool.name}`);
+            console.log(`$ ${bunCommand}`);
+            const code = runInteractive(bunCommand);
+            if (code === 0) persistBunGlobalBin();
+            refreshBunPath();
+            const after = detectStatus(bunTool);
+            status.set(bunTool.id, after);
+            if (code === 0 && commandExists("bun")) {
+              console.log(`OK ${bunTool.name}: ${after.version}`);
+            } else {
+              console.log(`FAILED ${bunTool.name} exit=${code}; Bun is still unavailable.`);
+            }
+            continue;
+          } else if (answer === "n" && npmAvailable) {
+            choice = "npm";
+          } else {
+            choice = "skip";
+          }
+          if (choice && await confirmLine(`Apply ${choice === "npm" ? "npm fallback" : "skip"} to remaining Bun packages`, false)) {
+            missingBunChoice = choice;
+          }
+        }
+        if (!commandExists("bun")) {
+          if (choice === "npm") command = `npm install -g ${tool.install.bun}`;
+          else {
+            console.log(`\nSKIP ${tool.name}: Bun is unavailable.`);
+            continue;
+          }
+        }
+      }
+    }
+
     console.log(`\n==> Installing ${tool.name}`);
     console.log(`$ ${command}`);
     const code = runInteractive(command);
+    if (tool.id === "bun") bunInstallAttempted = true;
+    if (tool.id === "bun" && code === 0) refreshBunPath();
+    if (tool.id === "rust" && code === 0) refreshCargoPath();
+    if (code === 0 && (tool.id === "bun" || command.startsWith("bun add -g "))) {
+      persistBunGlobalBin();
+      refreshBunPath();
+    }
     const after = detectStatus(tool);
     status.set(tool.id, after);
 
@@ -1491,7 +1628,7 @@ async function main() {
     const selected = tools.filter((tool) => ids.includes(tool.id));
     const missing = ids.filter((id) => !selected.some((tool) => tool.id === id));
     if (missing.length > 0) console.log(`Unknown tool ids: ${missing.join(", ")}`);
-    return await installTools(selected, detectAllWithProgress(selected, "Checking installed versions"), force);
+    return await installTools(selected, detectAllWithProgress(selected, "Checking installed versions"), force, tools);
   }
   if (cmd === "update") {
     const useAll = args.includes("--all");
