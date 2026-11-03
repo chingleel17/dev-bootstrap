@@ -1,6 +1,8 @@
 # dev-bootstrap
 
-> 一個指令把開發環境裝起來，並持續保持最新。
+> Set up your development environment with one command, and keep it up to date.
+
+English | [繁體中文](https://github.com/chingleel17/dev-bootstrap/blob/main/README.zh-TW.md)
 
 <p>
   <a href="https://github.com/chingleel17/dev-bootstrap/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/chingleel17/dev-bootstrap/release.yml?style=for-the-badge&label=CI" alt="CI status"></a>
@@ -11,168 +13,183 @@
   <img src="https://img.shields.io/badge/stack-Node.js%20%2B%20Bun%20%2B%20TypeScript-f97316?style=for-the-badge" alt="Stack Node.js + Bun + TypeScript">
 </p>
 
-換新電腦、重裝系統、或幫團隊新成員設定機器時，不用再一個一個找安裝頁面。`dev-bootstrap` 內建 39 個常用 CLI 工具的安裝定義，會依照你的作業系統自動選用正確的套件管理器（Windows 用 `winget`、macOS 用 `brew`、Linux 用 `apt`，跨平台工具用 `npm` / `bun`），並跳過已安裝的項目。
+When you get a new computer, reinstall your OS, or set up a machine for a new teammate, you no longer have to hunt down install pages one by one. `dev-bootstrap` ships install definitions for 41 common CLI tools, picks the right package manager for your OS (`winget` on Windows, `brew` on macOS, `apt` on Linux, `npm` / `bun` for cross-platform tools), and skips anything already installed.
 
-## 特色
+## Features
 
-- **互動式選單** — 方向鍵勾選要裝的工具，支援搜尋、分類切換、全選
-- **跨平台** — Windows / macOS / Linux 各自對應正確的安裝指令
-- **不重複安裝** — 先偵測版本，已安裝的預設跳過
-- **掃描結果沿用** — 同一次執行期間只掃描一次，進出選單不會重複詢問；按 `V` 可隨時重新掃描
-- **自動更新清單** — 儲存一份常用工具清單，之後一個指令全部更新，可掛 Task Scheduler 或 cron
-- **診斷模式** — `doctor` 一次列出所有工具的安裝狀態與版本
-- **可自訂工具** — 在使用者目錄放 YAML 即可新增、調整或隱藏工具，升級套件不會被覆蓋
+- **Interactive menu** — Pick tools with the arrow keys, with search, category switching, and select all
+- **Cross-platform** — Uses the correct install command on Windows, macOS, and Linux
+- **No duplicate installs** — Detects versions first and skips installed tools by default
+- **Reused scan results** — Scans once per run, so re-entering the menu does not ask again; press `V` to rescan at any time
+- **Automatic update list** — Save a list of your usual tools and update them all with one command, from Task Scheduler or cron if you like
+- **Diagnostics** — `doctor` lists the install status and version of every tool
+- **Custom tools** — Add, adjust, or hide tools with YAML in your user directory; package upgrades will not overwrite it
 
-## 安裝
+## Installation
 
-不安裝直接執行：
+Run without installing:
 
 ```bash
 npx dev-bootstrap menu
 ```
 
-或全域安裝：
+Or install globally:
 
 ```bash
 npm install -g dev-bootstrap
 ```
 
-使用 Bun：
+With Bun:
 
 ```bash
 bun add -g dev-bootstrap
 ```
 
-需要 Node.js 20 以上。
+Requires Node.js 20 or later.
 
-## 快速開始
+## Quick start
 
 ```bash
 npx dev-bootstrap menu
 ```
 
-進入選單後有 7 個選項：
+The menu has 8 options:
 
-| 選項 | 說明 |
+| Option | Description |
 |---|---|
-| Install tools | 勾選並安裝工具 |
-| Configure automatic update list | 設定自動更新清單並儲存 |
-| Update saved tools now | 立即更新已儲存的清單 |
-| Schedule automatic updates | 互動式建立、查看或移除定時更新排程 |
-| Doctor | 檢查所有工具的安裝狀態與版本 |
-| List tools | 列出所有可用工具 |
-| List tools with versions | 列出工具並顯示已安裝版本 |
-| Exit | 離開 |
+| Install tools | Select and install tools |
+| Configure automatic update list | Choose and save the automatic update list |
+| Update saved tools now | Update the saved list immediately |
+| Schedule automatic updates | Interactively create, view, or remove the update schedule |
+| Doctor | Check the install status and version of every tool |
+| List tools | List all available tools |
+| List tools with versions | List tools with their installed versions |
+| Exit | Quit |
 
-## 讓 AI 幫你安裝
+## Let an AI agent install for you
 
-如果你用 Claude Code、Codex、Gemini CLI 之類的 AI 編碼工具，可以直接請它代勞。因為 `install` 和 `update` 都是非互動指令，AI 可以安全地執行。
+If you use an AI coding tool such as Claude Code, Codex, or Gemini CLI, you can hand this job to it. `install` and `update` are non-interactive commands, so an agent can run them safely.
 
-把這段話丟給你的 AI 助理：
-
-```text
-請用 npx dev-bootstrap 幫我設定開發環境：
-1. 先跑 npx dev-bootstrap doctor 看目前狀態
-2. 列出還沒安裝的工具給我確認
-3. 我確認後用 npx dev-bootstrap install <tool-id...> 安裝
-```
-
-或直接指定要什麼：
+Give your AI assistant this prompt:
 
 ```text
-用 npx dev-bootstrap install 幫我裝 git gh node bun ripgrep fzf bat eza jq
+Use npx dev-bootstrap to set up my development environment:
+1. Run npx dev-bootstrap doctor to see the current state
+2. List the tools that are not installed yet and ask me to confirm
+3. After I confirm, install them with npx dev-bootstrap install <tool-id...>
 ```
 
-建議讓 AI 先跑 `doctor` 再安裝，這樣它能知道哪些已經有了。注意安裝指令在 Windows 會呼叫 `winget`、在 Linux 會用 `sudo apt-get`，可能需要你手動授權或輸入密碼。
+Or say exactly what you want:
 
-## 指令
+```text
+Use npx dev-bootstrap install to install git gh node bun ripgrep fzf bat eza jq
+```
+
+Have the agent run `doctor` first so it knows what is already there. Install commands call `winget` on Windows and `sudo apt-get` on Linux, so you may need to approve them or enter a password.
+
+## Commands
 
 ```bash
-dev-bootstrap menu                                  # 互動式選單
-dev-bootstrap list                                  # 列出所有工具
-dev-bootstrap list --versions                       # 列出並檢查已安裝版本
-dev-bootstrap doctor                                # 診斷所有工具狀態
-dev-bootstrap install git gh node                   # 安裝指定工具
-dev-bootstrap install git gh node --force            # 強制重裝（含已安裝的）
-dev-bootstrap update                                # 更新已儲存的清單
-dev-bootstrap update claude codex opencode          # 更新指定工具
-dev-bootstrap update --all                          # 更新全部工具
-dev-bootstrap schedule create --daily --time 09:00  # 註冊定時自動更新
-dev-bootstrap schedule status                       # 查詢目前排程
-dev-bootstrap schedule remove                       # 移除排程
-dev-bootstrap --version                              # 顯示版本（也可用 -v）
-dev-bootstrap --help                                 # 顯示用法（也可用 -h）
+dev-bootstrap menu                                  # Interactive menu
+dev-bootstrap list                                  # List all tools
+dev-bootstrap list --versions                       # List tools and check installed versions
+dev-bootstrap doctor                                # Diagnose the status of all tools
+dev-bootstrap install git gh node                   # Install specific tools
+dev-bootstrap install git gh node --force            # Force reinstall, including installed tools
+dev-bootstrap update                                # Update the saved list
+dev-bootstrap update claude codex opencode          # Update specific tools
+dev-bootstrap update --all                          # Update all tools
+dev-bootstrap schedule create --daily --time 09:00  # Register scheduled automatic updates
+dev-bootstrap schedule status                       # Show the current schedule
+dev-bootstrap schedule remove                       # Remove the schedule
+dev-bootstrap --version                              # Show the version (or -v)
+dev-bootstrap --help                                 # Show usage (or -h)
 ```
 
-同時選取 Bun 與使用 Bun 安裝的工具時，會先安裝 Bun。若 Bun 不可用，互動式安裝會詢問是否先安裝 Bun、改用 npm，或略過；選擇 npm／略過時可套用至本次剩餘的 Bun 套件。安裝 Bun 後會更新目前程序的 PATH，找到 Bun 後接續安裝；若仍找不到則再次詢問。非互動模式缺少 Bun 時會略過相關工具。
+When Bun and tools installed through Bun are selected together, Bun is installed first. If Bun is unavailable, an interactive install asks whether to install Bun first, use npm, or skip; choosing npm or skip can be applied to the remaining Bun packages in that run. After installing Bun, the current process's PATH is refreshed and the install continues once Bun is found; if it still cannot be found, you are asked again. In non-interactive mode, tools that need Bun are skipped when it is missing.
 
-在 macOS／Linux 上，`bun add -g` 安裝的指令會放在 Bun 的全域目錄（預設 `~/.bun/bin`）。Bun 官方安裝腳本會把這個目錄加進 PATH，但 Homebrew 版的 Bun 不會，因此安裝 Bun 或 Bun 套件成功後，dev-bootstrap 會在 shell 設定檔末尾加上一行 `export PATH="$HOME/.bun/bin:$PATH"`（zsh 為 `~/.zshrc`；bash 在 macOS 為 `~/.bash_profile`、Linux 為 `~/.bashrc`；已存在則不重複加入）。其他 shell 會顯示需要手動加入的指令。
+On macOS and Linux, commands installed with `bun add -g` go into Bun's global directory (`~/.bun/bin` by default). Bun's official install script adds this directory to PATH, but the Homebrew build does not. So after Bun or a Bun package installs successfully, dev-bootstrap appends `export PATH="$HOME/.bun/bin:$PATH"` to your shell config (`~/.zshrc` for zsh; `~/.bash_profile` on macOS or `~/.bashrc` on Linux for bash; it is not added twice). For other shells, it prints the line to add manually.
 
-### 安裝後找不到指令
+### Command not found after installing
 
-若出現 `command not found`（例如 `tauri`、`opencode`），或安裝結尾顯示 `verify did not detect it`：
+If you see `command not found` (for example `tauri` or `opencode`), or the install ends with `verify did not detect it`:
 
-1. 開新的終端機，或執行 `source ~/.zshrc`（bash 改用對應的設定檔）。
-2. 仍找不到時，執行 `bun pm bin -g` 查看全域目錄，並確認該目錄已加入 PATH：
+1. Open a new terminal, or run `source ~/.zshrc` (use the matching config file for bash).
+2. If the command is still missing, run `bun pm bin -g` to see the global directory, and make sure that directory is on your PATH:
 
    ```sh
    echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.zshrc
    source ~/.zshrc
    ```
 
-3. 以 Homebrew 安裝的 Bun 請用 `brew upgrade bun`（或 dev-bootstrap 的更新功能）升級，不要使用 `bun upgrade`。
+3. If Bun was installed with Homebrew, upgrade it with `brew upgrade bun` (or dev-bootstrap's update feature), not `bun upgrade`.
 
-Rust 在 macOS／Linux 一律使用官方 rustup 腳本安裝（不使用 Homebrew 的 `rustup`：它是 keg-only 且不含工具鏈，安裝後找不到 `rustc`），更新使用 `rustup update`。若先前已用 Homebrew 安裝 rustup，請先 `brew uninstall rustup` 再重新安裝。
+On macOS and Linux, Rust is always installed with the official rustup script. Homebrew's `rustup` is not used because it is keg-only and has no toolchain, so `rustc` cannot be found after installing. Updates use `rustup update`. If you previously installed rustup with Homebrew, run `brew uninstall rustup` before installing again.
 
-## 選單操作
+## Menu controls
 
 ```text
-方向鍵         移動
-PageUp/Down    翻頁
-Home/End       跳到第一個 / 最後一個
-Space          選取 / 取消選取
-A / Ctrl+A     全選 / 清除目前可見工具
-C              全選 / 清除目前分類
-Tab            切換分類
-/              搜尋
-V              檢查 / 重新整理已安裝版本
-F              切換強制安裝模式
-Enter          安裝已選取的工具
-Backspace      回到主選單
-Q              離開
+Arrow keys     Move
+PageUp/Down    Page through the list
+Home/End       Jump to the first / last item
+Space          Select / deselect
+A / Ctrl+A     Select / clear all visible tools
+C              Select / clear the current category
+Tab            Switch category
+/              Search
+V              Check / refresh installed versions
+F              Toggle force install mode
+Enter          Install the selected tools
+Backspace      Back to the main menu
+Q              Quit
 ```
 
-## 內建工具
+## Built-in tools
 
-共 39 個，分為 7 類。
+41 tools in 8 categories.
 
-**AI** — Claude Code、OpenAI Codex CLI、Gemini CLI、GitHub Copilot CLI、OpenCode CLI、OpenSpec、Herdr
+**AI** — Claude Code, OpenAI Codex CLI, Gemini CLI, GitHub Copilot CLI, OpenCode CLI, OpenSpec, Herdr
 
-**Runtime** — Node.js LTS、Bun、pnpm、Yarn、TypeScript、tsx、uv (Python)、Rust、Go、Java (Temurin 21)
+**AI Tools** — agent-browser, Playwright CLI
 
-**Git** — Git、Git LFS、GitHub CLI
+**Runtime** — Node.js LTS, Bun, pnpm, Yarn, TypeScript, tsx, uv (Python), Rust, Go, Java (Temurin 21)
 
-**Shell** — Oh My Posh（Windows／Linux）或 Oh My Zsh（macOS）、zoxide、fzf、ripgrep、fd、bat、eza
+**Git** — Git, Git LFS, GitHub CLI
 
-**Network** — ngrok、cloudflared、OpenSSH Client、OpenSSL
+**Shell** — Oh My Posh (Windows / Linux) or Oh My Zsh (macOS), zoxide, fzf, ripgrep, fd, bat, eza
 
-**Utilities** — jq、yq、delta、wget、curl、zip、unzip
+**Network** — ngrok, cloudflared, OpenSSH Client, OpenSSL
+
+**Utilities** — jq, yq, delta, wget, curl, zip, unzip
 
 **Frontend** — Tauri CLI
 
-用 `dev-bootstrap list` 看完整清單與 tool id。
+Run `dev-bootstrap list` for the full list and tool ids.
 
-## 自訂工具
+### What AI Tools installs
 
-不需要 clone 專案。在設定目錄下建立 `tools/` 資料夾，放入任意 `.yaml` 檔即可：
+The `AI` category holds coding agents and workspaces you operate directly. The `AI Tools` category holds tools for agents to use. These usually need setup beyond the CLI itself, so installing them runs one extra step:
+
+| Tool | CLI install | Post-install step | Update |
+|---|---|---|---|
+| `agent-browser` | `brew` on macOS, `npm` elsewhere | `agent-browser install`: downloads Chrome for Testing | `agent-browser upgrade` |
+| `playwright-cli` | `npm` | `playwright-cli install --skills -g`: installs the skill to `~/.claude/skills` | Updates the CLI and reinstalls the skill |
+
+- The `agent-browser` npm package declares Node.js 24 or later, a higher requirement than dev-bootstrap's own. macOS installs through `brew` instead.
+- On Linux, if system libraries the browser needs are missing, run `agent-browser install --with-deps` yourself (it uses `sudo`).
+- `agent-browser` skills ship with the CLI and can be read with `agent-browser skills get core`, so they are not installed separately. To install them into an agent's skills directory, run `npx skills add vercel-labs/agent-browser`.
+
+## Custom tools
+
+You do not need to clone the project. Create a `tools/` folder in the config directory and add any `.yaml` file:
 
 ```
 ~/.dev-bootstrap/tools/my-tools.yaml
 ```
 
-自訂定義會**疊加**在內建定義之上，所以升級套件時你的設定不會被覆蓋，也不會錯過內建工具的更新。
+Custom definitions are **layered** on top of the built-in ones, so package upgrades will not overwrite your settings, and you still receive updates to the built-in tools.
 
-**新增工具** — 用內建沒有的 id：
+**Add a tool** — Use an id that is not built in:
 
 ```yaml
 - id: httpie
@@ -188,94 +205,95 @@ Q              離開
       regex: "([0-9]+(?:\\.[0-9]+)+)"
 ```
 
-**調整內建工具** — 用相同的 id，只寫要改的欄位，其餘沿用內建：
+**Adjust a built-in tool** — Use the same id and write only the fields to change; the rest come from the built-in definition:
 
 ```yaml
 - id: ripgrep
-  description: 我們團隊的搜尋工具
+  description: Our team's search tool
 ```
 
-**隱藏不需要的工具** — 標記 `remove`：
+**Hide a tool you do not need** — Mark it with `remove`:
 
 ```yaml
 - id: zip
   remove: true
 ```
 
-執行 `dev-bootstrap doctor` 可以看到目前讀取了哪些來源與自訂筆數。YAML 格式有誤時會跳過該檔並指出錯誤位置，不影響其他工具。
+Run `dev-bootstrap doctor` to see which sources were loaded and how many custom entries there are. A file with invalid YAML is skipped and the error location is reported; other tools are not affected.
 
-### 欄位說明
+### Fields
 
-| 欄位 | 必填 | 說明 |
+| Field | Required | Description |
 |---|---|---|
-| `id` | 是 | 唯一識別，指令中使用 |
-| `name` | 是 | 顯示名稱 |
-| `category` | 是 | 分類，可自訂新分類 |
-| `platforms` | 否 | 顯示及安裝的平台清單：`windows`／`mac`／`linux` |
-| `description` | 否 | 選單中的說明 |
-| `homepage` | 否 | 官方網站 |
-| `install` | 否 | 各平台安裝方式：`winget`／`brew`／`apt`／`npm`／`bun`／`script`／`powershell` |
-| `update` | 否 | `command` 自訂更新指令、`disabled` 停用更新、`note` 說明 |
-| `verify` | 否 | 驗證指令清單：`command`、選用的 `regex`（第一個擷取群組為版本號）；`requireSuccess: true` 表示不可只以指令存在判定已安裝 |
-| `remove` | 否 | 標記 `true` 可隱藏同 id 的內建工具 |
+| `id` | Yes | Unique identifier, used in commands |
+| `name` | Yes | Display name |
+| `category` | Yes | Category; you can define new ones |
+| `platforms` | No | Platforms to show and install on: `windows` / `mac` / `linux` |
+| `description` | No | Description shown in the menu |
+| `homepage` | No | Official website |
+| `install` | No | Install methods per platform: `winget` / `brew` / `apt` / `npm` / `bun` / `script` / `powershell` |
+| `postInstall` | No | Command to run after the main install succeeds, such as downloading a browser or installing skills; not run on update |
+| `update` | No | `command` for a custom update command, `disabled` to turn updates off, `note` for a description |
+| `verify` | No | List of verify commands: `command` and optional `regex` (the first capture group is the version); `requireSuccess: true` means the command merely existing does not count as installed |
+| `remove` | No | Set to `true` to hide the built-in tool with the same id |
 
-## 自動更新
+## Automatic updates
 
-從選單選 **Configure automatic update list**，勾選要保持最新的工具，按 Enter 儲存。之後執行：
+From the menu, choose **Configure automatic update list**, check the tools to keep up to date, and press Enter to save. Then run:
 
 ```bash
 dev-bootstrap update
 ```
 
-這個指令是非互動的，適合交給系統排程定時執行。
+This command is non-interactive, so it suits scheduled runs.
 
-### 定時執行
+### Scheduled runs
 
-最簡單的方式是從選單選 **Schedule automatic updates**：用方向鍵挑常用時段（每天 09:00、每週一 09:00、每週五 18:00、每天 12:30），或選 **Custom...** 自訂頻率、星期與時間，不用記指令。
+The easiest way is **Schedule automatic updates** in the menu: pick a common time with the arrow keys (daily at 09:00, Mondays at 09:00, Fridays at 18:00, daily at 12:30), or choose **Custom...** to set the frequency, weekday, and time, with no commands to remember.
 
-也可以用指令，`schedule` 會把上面的更新指令註冊到系統排程，不需要手動開排程管理器：
+You can also use commands. `schedule` registers the update command above with the system scheduler, so you do not have to open a scheduler yourself:
 
 ```bash
-dev-bootstrap schedule create                          # 每週一 09:00
-dev-bootstrap schedule create --daily                  # 每天 09:00
-dev-bootstrap schedule create --daily --time 14:30     # 每天 14:30
-dev-bootstrap schedule create --weekday fri --time 18:00   # 每週五 18:00
-dev-bootstrap schedule status                          # 查詢目前排程
-dev-bootstrap schedule remove                          # 移除排程
+dev-bootstrap schedule create                          # Mondays at 09:00
+dev-bootstrap schedule create --daily                  # Daily at 09:00
+dev-bootstrap schedule create --daily --time 14:30     # Daily at 14:30
+dev-bootstrap schedule create --weekday fri --time 18:00   # Fridays at 18:00
+dev-bootstrap schedule status                          # Show the current schedule
+dev-bootstrap schedule remove                          # Remove the schedule
 ```
 
-各平台使用的機制：Windows 為工作排程器（`schtasks`）、macOS 為 launchd（`~/Library/LaunchAgents`）、Linux 為 cron（`crontab`）。
+Mechanism per platform: Task Scheduler (`schtasks`) on Windows, launchd (`~/Library/LaunchAgents`) on macOS, and cron (`crontab`) on Linux.
 
-寫入系統排程前會先印出完整指令並要求確認，確認後才執行。非互動環境（腳本、CI）請加 `--yes`。
+Before writing to the system scheduler, the full command is printed and you are asked to confirm. In non-interactive environments (scripts, CI), add `--yes`.
 
-需要先設定好自動更新清單，否則 `schedule create` 會提示你先去設定。
+You need to set up the automatic update list first; otherwise `schedule create` tells you to do so.
 
-### 更新策略
+### Update strategy
 
-依序判斷：
+Checked in this order:
 
-1. 工具若標記 `update.disabled`（例如 Windows 內建的 OpenSSH 由 Windows Update 管理），直接跳過
-2. 工具若有自己的更新指令（例如 `claude update`、`opencode upgrade`），優先使用
-3. 否則依平台：Windows `winget upgrade`、macOS `brew upgrade`、或 `npm install -g <pkg>@latest` / `bun add -g <pkg>@latest`
+1. If a tool is marked `update.disabled` (for example, Windows' built-in OpenSSH is managed by Windows Update), it is skipped
+2. If a tool has its own update command (for example `claude update` or `opencode upgrade`), that command is used
+3. Otherwise, by platform: `winget upgrade` on Windows, `brew upgrade` on macOS, or `npm install -g <pkg>@latest` / `bun add -g <pkg>@latest`
 
-更新前會先確認工具是否真的已安裝，未安裝的會跳過。
+Before updating, dev-bootstrap confirms that the tool is actually installed; tools that are not installed are skipped.
 
-在 Windows 上，偵測到指令存在**不代表**該套件由 `winget` 管理。所以會先用 `winget list --id ...` 探測，若指令存在但實際不是 winget 管理的，會標記為 SKIP 而不是回報更新失敗。
+On Windows, finding a command **does not mean** its package is managed by `winget`. So `winget list --id ...` is probed first; if the command exists but is not managed by winget, it is marked SKIP instead of being reported as a failed update.
 
-### 設定檔位置
+### Config location
 
-解析順序：
+Resolution order:
 
-1. `DEV_BOOTSTRAP_HOME` 環境變數（若已設定）
-2. 當前目錄的 `./.dev-bootstrap/`（若已存在，可作為專案層級覆寫）
-3. `~/.dev-bootstrap/`（預設）
+1. The `DEV_BOOTSTRAP_HOME` environment variable, if set
+2. `./.dev-bootstrap/` in the current directory, if it exists (can serve as a project-level override)
+3. `~/.dev-bootstrap/` (default)
 
-此目錄存放：
+This directory holds:
 
-- `update-profile.json` — 自動更新清單
-- `tools/*.yaml` — 自訂工具定義（見「自訂工具」）
+- `update-profile.json` — The automatic update list
+- `tools/*.yaml` — Custom tool definitions (see "Custom tools")
 
-## 從原始碼開發
+## Development from source
 
 ```bash
 git clone https://github.com/chingleel17/dev-bootstrap.git
@@ -284,14 +302,14 @@ bun install
 bun run menu
 ```
 
-其他指令：
+Other commands:
 
 ```bash
-bun run build        # 建置到 dist/
-bun run typecheck    # 型別檢查
+bun run build        # Build to dist/
+bun run typecheck    # Type check
 ```
 
-工具定義在 `tools/*.yaml`，新增工具只要加一筆 YAML，不用改程式。格式：
+Tool definitions live in `tools/*.yaml`. Adding a tool only takes one YAML entry, with no code changes. Format:
 
 ```yaml
 - id: ripgrep
@@ -307,6 +325,6 @@ bun run typecheck    # 型別檢查
       regex: "ripgrep ([0-9]+(?:\\.[0-9]+)+)"
 ```
 
-## 授權
+## License
 
 [MIT](https://github.com/chingleel17/dev-bootstrap/blob/main/LICENSE)
