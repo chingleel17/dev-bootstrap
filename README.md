@@ -2,6 +2,8 @@
 
 > 一個指令把開發環境裝起來，並持續保持最新。
 
+繁體中文 | [English](https://github.com/chingleel17/dev-bootstrap/blob/main/README.en.md)
+
 <p>
   <a href="https://github.com/chingleel17/dev-bootstrap/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/chingleel17/dev-bootstrap/release.yml?style=for-the-badge&label=CI" alt="CI status"></a>
   <a href="https://www.npmjs.com/package/dev-bootstrap"><img src="https://img.shields.io/npm/v/dev-bootstrap?style=for-the-badge&color=2563eb&label=version" alt="npm version"></a>
@@ -11,7 +13,7 @@
   <img src="https://img.shields.io/badge/stack-Node.js%20%2B%20Bun%20%2B%20TypeScript-f97316?style=for-the-badge" alt="Stack Node.js + Bun + TypeScript">
 </p>
 
-換新電腦、重裝系統、或幫團隊新成員設定機器時，不用再一個一個找安裝頁面。`dev-bootstrap` 內建 39 個常用 CLI 工具的安裝定義，會依照你的作業系統自動選用正確的套件管理器（Windows 用 `winget`、macOS 用 `brew`、Linux 用 `apt`，跨平台工具用 `npm` / `bun`），並跳過已安裝的項目。
+換新電腦、重裝系統、或幫團隊新成員設定機器時，不用再一個一個找安裝頁面。`dev-bootstrap` 內建 41 個常用 CLI 工具的安裝定義，會依照你的作業系統自動選用正確的套件管理器（Windows 用 `winget`、macOS 用 `brew`、Linux 用 `apt`，跨平台工具用 `npm` / `bun`），並跳過已安裝的項目。
 
 ## 特色
 
@@ -51,7 +53,7 @@ bun add -g dev-bootstrap
 npx dev-bootstrap menu
 ```
 
-進入選單後有 7 個選項：
+進入選單後有 8 個選項：
 
 | 選項 | 說明 |
 |---|---|
@@ -144,9 +146,11 @@ Q              離開
 
 ## 內建工具
 
-共 39 個，分為 7 類。
+共 41 個，分為 8 類。
 
 **AI** — Claude Code、OpenAI Codex CLI、Gemini CLI、GitHub Copilot CLI、OpenCode CLI、OpenSpec、Herdr
+
+**AI Tools** — agent-browser、Playwright CLI
 
 **Runtime** — Node.js LTS、Bun、pnpm、Yarn、TypeScript、tsx、uv (Python)、Rust、Go、Java (Temurin 21)
 
@@ -161,6 +165,19 @@ Q              離開
 **Frontend** — Tauri CLI
 
 用 `dev-bootstrap list` 看完整清單與 tool id。
+
+### AI Tools 的安裝內容
+
+`AI` 分類是可直接操作的 coding agent 與工作環境，`AI Tools` 分類則是給 agent 使用的工具。這類工具除了 CLI 本身，通常還需要額外設定，因此安裝時會多執行一個步驟：
+
+| 工具 | CLI 安裝 | 安裝後步驟 | 更新 |
+|---|---|---|---|
+| `agent-browser` | macOS 用 `brew`，其他平台用 `npm` | `agent-browser install`：下載 Chrome for Testing | `agent-browser upgrade` |
+| `playwright-cli` | `npm` | `playwright-cli install --skills -g`：把 skill 安裝到 `~/.claude/skills` | 更新 CLI 並重新安裝 skill |
+
+- `agent-browser` 的 npm 套件宣告需要 Node.js 24 以上，比 dev-bootstrap 本身的需求高；macOS 則改用 `brew` 安裝。
+- Linux 若缺少瀏覽器所需的系統函式庫，請自行執行 `agent-browser install --with-deps`（會使用 `sudo`）。
+- `agent-browser` 的 skills 內建於 CLI，可用 `agent-browser skills get core` 讀取，因此不另外安裝。若要安裝到 agent 的 skills 目錄，請執行 `npx skills add vercel-labs/agent-browser`。
 
 ## 自訂工具
 
@@ -215,6 +232,7 @@ Q              離開
 | `description` | 否 | 選單中的說明 |
 | `homepage` | 否 | 官方網站 |
 | `install` | 否 | 各平台安裝方式：`winget`／`brew`／`apt`／`npm`／`bun`／`script`／`powershell` |
+| `postInstall` | 否 | 主安裝成功後執行的指令，例如下載瀏覽器或安裝 skills；更新時不會執行 |
 | `update` | 否 | `command` 自訂更新指令、`disabled` 停用更新、`note` 說明 |
 | `verify` | 否 | 驗證指令清單：`command`、選用的 `regex`（第一個擷取群組為版本號）；`requireSuccess: true` 表示不可只以指令存在判定已安裝 |
 | `remove` | 否 | 標記 `true` 可隱藏同 id 的內建工具 |

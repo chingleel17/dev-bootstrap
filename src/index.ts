@@ -101,6 +101,8 @@ type Tool = {
   description?: string;
   homepage?: string;
   install?: InstallSpec;
+  /** 主安裝成功後執行的指令，例如下載瀏覽器或安裝 skills；更新時不會執行。 */
+  postInstall?: string;
   update?: UpdateSpec;
   verify?: VerifySpec[];
   /** 僅在指定平台顯示及安裝此工具。 */
@@ -742,7 +744,10 @@ function renderInstallMenu(tools: Tool[], status: Map<string, ToolStatus>, state
     lines.push(`Status: ${colorStatus(st)}  Category: ${selectedTool.category}`);
     if (selectedTool.homepage) lines.push(truncate(`Homepage: ${selectedTool.homepage}`, width));
     const installCommand = chooseInstallCommand(selectedTool);
-    if (installCommand) lines.push(`${ansi.dim}${truncate(`Install: ${installCommand}`, width)}${ansi.reset}`);
+    if (installCommand) {
+      const fullCommand = selectedTool.postInstall ? `${installCommand} && ${selectedTool.postInstall}` : installCommand;
+      lines.push(`${ansi.dim}${truncate(`Install: ${fullCommand}`, width)}${ansi.reset}`);
+    }
   } else {
     lines.push(`${ansi.dim}No tool selected.${ansi.reset}`);
   }
@@ -1061,6 +1066,11 @@ async function installTools(tools: Tool[], status = withUncheckedStatus(tools), 
     if (code === 0 && (tool.id === "bun" || command.startsWith("bun add -g "))) {
       persistBunGlobalBin();
       refreshBunPath();
+    }
+    if (code === 0 && tool.postInstall) {
+      console.log(`$ ${tool.postInstall}`);
+      const postCode = runInteractive(tool.postInstall);
+      if (postCode !== 0) console.log(`FAILED post-install step of ${tool.name} exit=${postCode}`);
     }
     const after = detectStatus(tool);
     status.set(tool.id, after);

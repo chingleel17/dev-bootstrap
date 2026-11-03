@@ -73,3 +73,33 @@
   verify:
     - command: "herdr --version"
       regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: agent-browser
+  name: agent-browser
+  category: AI Tools
+  description: Browser automation CLI for AI agents
+  homepage: https://agent-browser.dev
+  install:
+    brew: "agent-browser"
+    npm: "agent-browser"
+  postInstall: "agent-browser install"
+  update:
+    command: "agent-browser upgrade"
+  verify:
+    - command: "agent-browser --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
+
+- id: playwright-cli
+  name: Playwright CLI
+  category: AI Tools
+  description: Playwright browser CLI and skills for AI agents
+  homepage: https://playwright.dev/docs/getting-started-cli
+  install:
+    npm: "@playwright/cli"
+  postInstall: "playwright-cli install --skills -g"
+  update:
+    command: "npm install -g @playwright/cli@latest && playwright-cli install --skills -g"
+    note: "更新 CLI 後同步更新 skills，避免版本不一致。"
+  verify:
+    - command: "playwright-cli --version"
+      regex: "([0-9]+(?:\\.[0-9]+)+)"
